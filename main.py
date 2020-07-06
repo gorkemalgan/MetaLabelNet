@@ -45,9 +45,9 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         return loss
 
     def meta_training():
+        vnet.train()
         # meta training for predicted labels
-        y_softmaxed = softmax(yy)
-        lc = criterion_meta(output, y_softmaxed)                                            # classification loss
+        lc = criterion_meta(output, yy)                                            # classification loss
         # train for classification loss with meta-learning
         net.zero_grad()
         grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True)
@@ -55,31 +55,26 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             grad.detach()
         fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
-        loss_meta = criterion_cce(fast_out, labels_meta)
 
-        #grads2 = torch.autograd.grad(loss_meta, vnet.parameters(), create_graph=True, retain_graph=True, only_inputs=True)
-        #print(grads2)
+        loss_meta = criterion_cce(fast_out, labels_meta)
+        loss_compatibility = criterion_cce(yy, labels)
+        loss_all = loss_meta + gamma*loss_compatibility
 
         optimizer_vnet.zero_grad()
         vnet.zero_grad()
-        loss_meta.backward(retain_graph=True)
-
-        lo = criterion_cce(y_softmaxed, labels)
-        lo.backward(retain_graph=True)
-
+        loss_all.backward(retain_graph=True)
         optimizer_vnet.step()
 
         # update labels
         vnet.eval()
-        _yy = vnet(output).detach()#vnet(label_mixup(output, labels)).detach()
+        _yy = vnet(feats).detach()  #vnet(label_mixup(output, labels)).detach()
         new_y[index,:] = _yy.cpu().numpy()
-        del grads#, grads2
+        del grads
 
         # training base network
-        y_softmaxed = softmax(_yy)
-        lc = criterion_meta(output, y_softmaxed)                        # classification loss
+        lc = criterion_meta(output, _yy)                                # classification loss
         le = -torch.mean(torch.mul(softmax(output), logsoftmax(output)))# entropy loss
-        loss = lc + gamma*le                                            # overall loss
+        loss = lc + le                                                  # overall loss
         optimizer.zero_grad()
         net.zero_grad()
         loss.backward()
@@ -91,44 +86,42 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         v_acc = AverageMeter()
         v_loss = AverageMeter()
         net.eval()
-        for batch_idx, (images, labels) in enumerate(t_dataloader):
-            images, labels = images.to(device), labels.to(device)
-            output, feats = net(images,get_feat=True)
-            yy = vnet(output)
-            y_softmaxed = softmax(yy)
-            loss = criterion_meta(output, y_softmaxed) 
-            vnet.zero_grad()
-            optimizer_vnet.zero_grad()
-            loss.backward()
-            optimizer_vnet.step()
+        vnet.train()
+        for _ in range(3):
+            for batch_idx, (images, labels) in enumerate(t_dataloader):
+                images, labels = images.to(device), labels.to(device)
+                output, feats = net(images,get_feat=True)
+                yy = vnet(feats)
+                y_softmaxed = softmax(yy)
+                loss = criterion_cce(y_softmaxed,labels) 
+                vnet.zero_grad()
+                optimizer_vnet.zero_grad()
+                loss.backward()
+                optimizer_vnet.step()
 
-            v_loss.update(loss.item())
-            if verbose == 2:
-                template = "(Vnet pretraining) Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}   \r"
-                sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, v_acc.percentage, v_loss.avg))
+                v_loss.update(loss.item())
+                if verbose == 2:
+                    template = "(Vnet pretraining) Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}   \r"
+                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, v_acc.percentage, v_loss.avg))
         net.train()
 
 
     print('use_clean:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, K:{}'.format(use_clean_data, alpha, beta, gamma, stage1, stage2, K))
 
     class VNet(nn.Module):
-        def __init__(self, input, hidden, output):
+        def __init__(self, input, hidden1, hidden2, output):
             super(VNet, self).__init__()
-            self.linear1 = nn.Linear(input, hidden)
-            self.linear3 = nn.Linear(hidden, output)
-        def forward(self, x, weights=None):
-            if weights == None:
-                x = F.relu(self.linear1(x))
-                out = self.linear3(x)
-                return out
-            else:
-                x = F.linear(x, weights['fc1.weight'], weights['fc1.bias'])   
-                x = F.threshold(x, 0, 0, inplace=True)
-                x = F.linear(x, weights['fc2.weight'], weights['fc2.bias'])   
-                feat = F.threshold(x, 0, 0, inplace=True)
-                x = F.linear(feat, weights['fc3.weight'], weights['fc3.bias'])
-                return out
-    vnet = VNet(NUM_CLASSES, 10*NUM_CLASSES, NUM_CLASSES).to(device)
+            self.linear1 = nn.Linear(input, hidden1)
+            self.linear2 = nn.Linear(hidden1, hidden2)
+            self.linear3 = nn.Linear(hidden2, output)
+            self.bn1 = nn.BatchNorm1d(hidden1)
+            self.bn2 = nn.BatchNorm1d(hidden2)
+        def forward(self, x):
+            x = F.relu(self.bn1(self.linear1(x)))
+            x = F.relu(self.bn2(self.linear2(x)))
+            out = self.linear3(x)
+            return softmax(out)
+    vnet = VNet(256, 256, 128, NUM_CLASSES).to(device)
     optimizer_vnet = torch.optim.Adam(vnet.parameters(), beta, weight_decay=1e-4)
     vnet.train()
 
@@ -151,6 +144,15 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
     model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
     if os.path.exists(model_s1_path):
         net.load_state_dict(torch.load(model_s1_path, map_location=device))
+        
+        net2.load_state_dict(torch.load(model_s1_path, map_location=device))
+        features = np.zeros((NUM_TRAINDATA,256))
+        for batch_idx, (images, labels) in enumerate(t_dataloader):
+            images, labels = images.to(device), labels.to(device)
+            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+            output, feats = net2(images,get_feat=True)
+            features[index] = feats.cpu().detach().numpy()
+            
 
     for epoch in range(stage2): 
         start_epoch = time.time()
@@ -163,6 +165,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         set_learningrate(optimizer, lr)
         net.train()
         vnet.train()
+        net2.eval()
         grads_dict = OrderedDict((name, 0) for (name, param) in vnet.named_parameters()) 
 
         # skip straightforward training if there is a pretrained model already
@@ -173,7 +176,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             if not os.path.exists(model_s1_path):
                 torch.save(net.cpu().state_dict(), model_s1_path)
                 net.to(device)   
-            pretrain_vnet()         
+            #pretrain_vnet()         
             if use_clean_data == 0:
                 t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta()
                 NUM_TRAINDATA = len(t_dataset)
@@ -194,9 +197,10 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
 
             # compute output
-            output, feats = net(images,get_feat=True)
+            output, _feats = net(images,get_feat=True)
             # predict labels
-            yy = vnet(output)
+            feats = torch.tensor(features[index], dtype=torch.float ,device=device)
+            yy = vnet(feats)
 
             if epoch < stage1:
                 loss = warmup_training()
@@ -223,7 +227,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), labels.size(0))
             # keep log of gradients
             for tag, parm in vnet.named_parameters():
-                grads_dict[tag] += parm.grad.data.cpu().numpy()
+                if parm.grad != None:
+                    grads_dict[tag] += parm.grad.data.cpu().numpy()
             del yy
 
             if verbose == 2:
@@ -259,6 +264,11 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
             for tag, parm in vnet.named_parameters():
                 summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
+            if not (noisy_idx is None) and epoch >= stage1:
+                hard_labels = np.argmax(new_y, axis=1)
+                num_true_pred = np.sum(hard_labels == clean_labels)
+                pred_similarity = (num_true_pred / clean_labels.shape[0])*100
+                summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
         if verbose > 0:
             template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Accuracy(top5,top1): {:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Learning rate(lr,yy): {}/{}, Time: {:3.1f}({:3.2f})'
@@ -434,7 +444,7 @@ if __name__ == "__main__":
         help="GPU ids to be used")
     parser.add_argument('-f', '--folder_log', required=False, type=str,
         help="Folder name for logs")
-    parser.add_argument('-v', '--verbose', required=False, type=int, default=0,
+    parser.add_argument('-v', '--verbose', required=False, type=int, default=2,
         help="Details of prints: 0(silent), 1(not silent)")
     parser.add_argument('-w', '--num_workers', required=False, type=int,
         help="Number of parallel workers to parse dataset")
@@ -482,8 +492,8 @@ if __name__ == "__main__":
     verbose = args.verbose
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:
-        ngpu = torch.cuda.device_count() if device.type == 'cuda' else 0  
-        gpu_ids = list(range(ngpu)) 
+        gpu_ids = 0 
+        ngpu = 1
     else:
         gpu_ids = args.gpu_ids[0]
         ngpu = len(gpu_ids)
@@ -507,6 +517,7 @@ if __name__ == "__main__":
     NUM_METADATA = len(meta_dataset)
     noisy_idx, clean_labels = get_synthetic_idx(dataset,args.seed,args.metadata_num,0,noise_type,noise_ratio,)
     net = get_model(dataset,framework).to(device)
+    net2 = get_model(dataset,framework).to(device)
     if (device.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
     lr_scheduler = get_lr_scheduler(dataset)
