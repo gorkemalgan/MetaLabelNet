@@ -2,13 +2,13 @@ import os
 import datetime
 
 current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-PARAMS = {'mnist_fashion'     :{'epochs':25, 'batch_size':32, 'num_classes':10},
-          'cifar10'           :{'epochs':120, 'batch_size':128, 'num_classes':10},
-          'cifar100'          :{'epochs':120, 'batch_size':32, 'num_classes':100},
-          'clothing1M'        :{'epochs':10, 'batch_size':32, 'num_classes':14},
-          'clothing1M50k'     :{'epochs':10, 'batch_size':32, 'num_classes':14},
-          'clothing1Mbalanced':{'epochs':10, 'batch_size':32, 'num_classes':14},
-          'food101N'          :{'epochs':10, 'batch_size':32, 'num_classes':101}}
+PARAMS = {'mnist_fashion'     :{'epochs':25, 'batch_size':32, 'num_classes':10 , 'num_features': 256},
+          'cifar10'           :{'epochs':120,'batch_size':128,'num_classes':10 , 'num_features': 256},
+          'cifar100'          :{'epochs':120,'batch_size':32, 'num_classes':100, 'num_features': 256},
+          'clothing1M'        :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
+          'clothing1M50k'     :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
+          'clothing1Mbalanced':{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
+          'food101N'          :{'epochs':10, 'batch_size':32, 'num_classes':101, 'num_features': 2048}}
 
 def create_folder(folder):
     if not os.path.exists(folder):
