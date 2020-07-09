@@ -643,6 +643,7 @@ def get_bigdata_lists(dataset_name,random_seed):
                     class_counts[label] += 1
             train_imgs = train_imgs2
             train_labels = train_labels2
+        random.Random(random_seed).shuffle(train_imgs)
 
         return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, val_imgs, test_labels, class_names 
 

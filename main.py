@@ -129,13 +129,10 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
 
-        if MIXUP_META == 1:
+        if MIXUP == 1:
             loss_meta = mixup_criterion(criterion_cce, fast_out, targets_a_meta, targets_b_meta, lam_meta)
         else:
             loss_meta = criterion_cce(fast_out, labels_meta)
-        if MIXUP_TRAIN == 1:
-            loss_compatibility = mixup_criterion(criterion_cce, yy, targets_a, targets_b, lam)
-        else:
             loss_compatibility = criterion_cce(yy, labels)
         loss_all = loss_meta + gamma*loss_compatibility
 
@@ -173,7 +170,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         net.train()
         return features
 
-    print('use_clean:{}, mixup_train: {}, mixup_meta: {}'.format(use_clean_data, MIXUP_TRAIN, MIXUP_META))
+    print('use_clean:{}, mixup: {}'.format(use_clean_data, MIXUP))
     print('alpha:{}, beta:{}, gamma:{}, k:{}, stage1:{}, stage2:{}'.format(alpha, beta, gamma, k, stage1, stage2))
 
     class VNet(nn.Module):
@@ -254,8 +251,6 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
             # training images and labels
             images, labels = images.to(device), labels.to(device)
             images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
-            if MIXUP_TRAIN == 1:
-                images, targets_a, targets_b, lam = mixup_data(images, labels)
 
             # compute output
             output, _feats = net(images,get_feat=True)
@@ -274,7 +269,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
             images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
             images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
-            if MIXUP_META == 1:
+            if MIXUP == 1:
                 images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
             
             #with torch.autograd.detect_anomaly():
@@ -338,7 +333,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     if SAVE_LOGS == 1:
         summary_writer.close()
         # write log for hyperparameters
-        hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup_train': MIXUP_TRAIN, 'mixup_meta':MIXUP_META}, 
+        hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
                               {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
         hp_writer.close()
         torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -485,7 +480,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='clothing1Mbalanced',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-n', '--noise_type', required=False, type=str, default='feature-dependent',
         help="Noise type for cifar10: 'feature-dependent', 'symmetric'")
@@ -510,11 +505,8 @@ if __name__ == "__main__":
         help="Either to use available clean data (1) or not (0)")
     parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
         help="Number of samples to be used as meta-data")
-
-    parser.add_argument('-mt', '--mixup_train', required=False, type=int, default=0,
-        help="")
-    parser.add_argument('-mm', '--mixup_meta', required=False, type=int, default=0,
-        help="")
+    parser.add_argument('-mu', '--mixup', required=False, type=int, default=0,
+        help="Whether to mixup meta data or not")
 
     parser.add_argument('-a', '--alpha', required=False, type=float,
         help="Learning rate for meta iteration")
@@ -549,8 +541,7 @@ if __name__ == "__main__":
     NUM_META_EPOCHS = args.stage2 - args.stage1
     SAVE_LOGS = args.save_logs
     RANDOM_SEED = args.seed
-    MIXUP_TRAIN = args.mixup_train
-    MIXUP_META = args.mixup_meta
+    MIXUP = args.mixup
     use_clean_data = args.clean_data
     verbose = args.verbose
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

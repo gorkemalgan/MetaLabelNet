@@ -26,6 +26,10 @@ clothing1M50k/dataset/
 clothing1M50k/logs/
 clothing1M50k/logs_hp/
 clothing1M50k/models/
+clothing1Mbalanced/dataset/
+clothing1Mbalanced/logs/
+clothing1Mbalanced/logs_hp/
+clothing1Mbalanced/models/
 
 *.bat
 *.sh
