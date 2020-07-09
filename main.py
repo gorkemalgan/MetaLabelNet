@@ -22,75 +22,100 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':1, 'stage2':20, 'k':10},
-               'cifar10'           :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':44,'stage2':120,'k':10},
-               'cifar100'          :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':21,'stage2':60, 'k':10},
-               'clothing1M'        :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10},
-               'clothing1M50k'     :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10},
-               'clothing1Mbalanced':{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10},
-               'food101N'          :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10}}
+PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':1, 'stage2':20, 'k':1},
+               'cifar10'           :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':44,'stage2':120,'k':1},
+               'cifar100'          :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':21,'stage2':60, 'k':1},
+               'clothing1M'        :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
+               'clothing1M50k'     :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
+               'clothing1Mbalanced':{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
+               'food101N'          :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1}}
 
-def label_mixup(pred, labels):
-    pred_oh = pred.cpu().detach()
-    labels_oh = torch.zeros(labels.cpu().size(0), NUM_CLASSES).scatter_(1, labels.cpu().view(-1, 1), 1).cpu()
-    mixup_label = pred_oh + labels_oh
-    return mixup_label.to(device)
+def mixup_data(x, y, alpha=1.0, use_cuda=True):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        lam = np.random.beta(4, 2)
+    else:
+        lam = 1
 
-def metapencil(alpha, beta, gamma, stage1, stage2, K):
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(device)
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+def metapencil(alpha, beta, gamma, stage1, stage2, k):
     def warmup_training():
-        for epoch in range(stage1): 
-            start_epoch = time.time()
-            train_accuracy = AverageMeter()
-            train_loss = AverageMeter()
+        model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
+        if not os.path.exists(model_s1_path):
+            for epoch in range(stage1): 
+                start_epoch = time.time()
+                train_accuracy = AverageMeter()
+                train_loss = AverageMeter()
 
-            lr = lr_scheduler(epoch)
-            set_learningrate(optimizer, lr)
-            net.train()
+                lr = lr_scheduler(epoch)
+                set_learningrate(optimizer, lr)
+                net.train()
 
-            for batch_idx, (images, labels) in enumerate(t_dataloader):
-                start = time.time()
-                
-                # training images and labels
-                images, labels = images.to(device), labels.to(device)
-                images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+                for batch_idx, (images, labels) in enumerate(t_dataloader):
+                    start = time.time()
+                    
+                    # training images and labels
+                    images, labels = images.to(device), labels.to(device)
+                    images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
 
-                # compute output
-                output, _feats = net(images,get_feat=True)
-                _, predicted = torch.max(output.data, 1)
+                    # compute output
+                    output, _feats = net(images,get_feat=True)
+                    _, predicted = torch.max(output.data, 1)
 
-                # training
-                loss = criterion_cce(output, labels)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                    # training
+                    loss = criterion_cce(output, labels)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
-                train_loss.update(loss.item())
-                
+                    train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
+                    train_loss.update(loss.item())
+                    
+                    if verbose == 2:
+                        template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
+                        sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
                 if verbose == 2:
-                    template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
-            if verbose == 2:
-                sys.stdout.flush()  
-                
-            # evaluate on validation and test data
+                    sys.stdout.flush()  
+                    
+                # evaluate on validation and test data
+                val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
+                test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
+
+                if SAVE_LOGS == 1:
+                    summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
+                    summary_writer.add_scalar('test_loss', test_loss, epoch)
+                    summary_writer.add_scalar('test_accuracy', test_accuracy, epoch)
+                    summary_writer.add_scalar('val_loss', val_loss, epoch)
+                    summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
+                    summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
+
+                if verbose > 0:
+                    template = 'Epoch {}, Accuracy(train,val,test): {:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f},Learning rate: {}, Time: {:3.1f}({:3.2f})'
+                    print(template.format(epoch + 1, 
+                                        train_accuracy.percentage, val_accuracy, test_accuracy,
+                                        train_loss.avg, val_loss, test_loss,  
+                                        lr, time.time()-start_epoch, (time.time()-start_epoch)/3600))   
+                torch.save(net.cpu().state_dict(), model_s1_path)
+                net.to(device) 
+        else:
+            net.load_state_dict(torch.load(model_s1_path, map_location=device))  
             val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
             test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
-
-            if SAVE_LOGS == 1:
-                summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
-                summary_writer.add_scalar('test_loss', test_loss, epoch)
-                summary_writer.add_scalar('test_accuracy', test_accuracy, epoch)
-                summary_writer.add_scalar('val_loss', val_loss, epoch)
-                summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
-                summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
-
             if verbose > 0:
-                template = 'Epoch {}, Accuracy(train,val,test): {:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f},Learning rate: {}, Time: {:3.1f}({:3.2f})'
-                print(template.format(epoch + 1, 
-                                    train_accuracy.percentage, val_accuracy, test_accuracy,
-                                    train_loss.avg, val_loss, test_loss,  
-                                    lr, time.time()-start_epoch, (time.time()-start_epoch)/3600))   
+                print('Pretrained model, Accuracy(val,test): {:3.1f}/{:3.1f}, Loss(val,test): {:4.3f}/{:4.3f}'.format(val_accuracy, test_accuracy,val_loss, test_loss))
+            if SAVE_LOGS == 1:
+                summary_writer.add_scalar('test_loss', test_loss, stage1-1)
+                summary_writer.add_scalar('test_accuracy', test_accuracy, stage1-1)
+                summary_writer.add_scalar('val_loss', val_loss, stage1-1)
+                summary_writer.add_scalar('val_accuracy', val_accuracy, stage1-1)
 
     def meta_training():
         vnet.train()
@@ -104,8 +129,14 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
 
-        loss_meta = criterion_cce(fast_out, labels_meta)
-        loss_compatibility = criterion_cce(yy, labels)
+        if MIXUP_META == 1:
+            loss_meta = mixup_criterion(criterion_cce, fast_out, targets_a_meta, targets_b_meta, lam_meta)
+        else:
+            loss_meta = criterion_cce(fast_out, labels_meta)
+        if MIXUP_TRAIN == 1:
+            loss_compatibility = mixup_criterion(criterion_cce, yy, targets_a, targets_b, lam)
+        else:
+            loss_compatibility = criterion_cce(yy, labels)
         loss_all = loss_meta + gamma*loss_compatibility
 
         optimizer_vnet.zero_grad()
@@ -115,18 +146,19 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
 
         # update labels
         vnet.eval()
-        _yy = vnet(feats).detach()  #vnet(label_mixup(output, labels)).detach()
-        new_y[index,:] = _yy.cpu().numpy()
+        _yy = vnet(feats).detach()
+        new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
         del grads
 
         # training base network
         lc = criterion_meta(output, _yy)                                # classification loss
         le = -torch.mean(torch.mul(softmax(output), logsoftmax(output)))# entropy loss
-        loss = lc + le                                                  # overall loss
+        loss = lc + k*le                                                # overall loss
         optimizer.zero_grad()
         net.zero_grad()
         loss.backward()
         optimizer.step()
+        vnet.train()
         
         return loss
 
@@ -141,7 +173,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         net.train()
         return features
 
-    print('use_clean:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, K:{}'.format(use_clean_data, alpha, beta, gamma, stage1, stage2, K))
+    print('use_clean:{}, mixup_train: {}, mixup_meta: {}'.format(use_clean_data, MIXUP_TRAIN, MIXUP_META))
+    print('alpha:{}, beta:{}, gamma:{}, k:{}, stage1:{}, stage2:{}'.format(alpha, beta, gamma, k, stage1, stage2))
 
     class VNet(nn.Module):
         def __init__(self, input, output):
@@ -170,13 +203,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
 
     # if not done beforehand, perform warmup-training
-    model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
-    if not os.path.exists(model_s1_path):
-        warmup_training()
-        torch.save(net.cpu().state_dict(), model_s1_path)
-        net.to(device)
-    else:
-        net.load_state_dict(torch.load(model_s1_path, map_location=device))  
+    warmup_training()
 
     # if no use clean data, extract reliable data for meta subset
     if use_clean_data == 0:
@@ -186,11 +213,23 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
     # initialize parameters and buffers
     NUM_TRAINDATA = len(t_dataset)
     labels_yy = np.zeros(NUM_TRAINDATA)
-    new_y = np.zeros([NUM_TRAINDATA,NUM_CLASSES])
+    new_y = np.zeros([NUM_META_EPOCHS+1,NUM_TRAINDATA,NUM_CLASSES])
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
 
+    # initialize predicted labels with given labels
+    y_init_path = '{}/y_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
+    labels_yy = np.zeros(NUM_TRAINDATA)
+    if not os.path.exists(y_init_path):
+        y_init = np.zeros([NUM_TRAINDATA,NUM_CLASSES])
+        for batch_idx, (images, labels) in enumerate(t_dataloader):
+            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+            onehot = torch.zeros(labels.size(0), NUM_CLASSES).scatter_(1, labels.view(-1, 1), 1).cpu().numpy()
+            y_init[index, :] = onehot
+        if not os.path.exists(y_init_path):
+            np.save(y_init_path,y_init)
+    new_y[0] = np.load(y_init_path)
     # extract features for all training data
     features = extract_features()          
 
@@ -200,6 +239,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
         train_loss = AverageMeter()
         train_accuracy_meta = AverageMeter()
         label_similarity = AverageMeter()
+        meta_epoch = epoch - stage1
 
         lr = lr_scheduler(epoch)
         set_learningrate(optimizer, lr)
@@ -214,13 +254,15 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             # training images and labels
             images, labels = images.to(device), labels.to(device)
             images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+            if MIXUP_TRAIN == 1:
+                images, targets_a, targets_b, lam = mixup_data(images, labels)
 
             # compute output
             output, _feats = net(images,get_feat=True)
             _, predicted = torch.max(output.data, 1)
 
             # predict labels
-            feats = torch.tensor(features[index], dtype=torch.float ,device=device)
+            feats = torch.tensor(features[index], dtype=torch.float, device=device)
             yy = vnet(feats)
             _, labels_yy[index] = torch.max(yy.cpu(), 1)
             # meta training images and labels
@@ -230,9 +272,10 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
                 t_meta_loader_iter = iter(m_dataloader)
                 images_meta, labels_meta = next(t_meta_loader_iter)
                 images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
-            #labels_meta = torch.zeros(labels_meta.size(0), NUM_CLASSES).scatter_(1, labels_meta.view(-1, 1), 1)
             images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
             images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
+            if MIXUP_META == 1:
+                images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
             
             #with torch.autograd.detect_anomaly():
             loss = meta_training()
@@ -277,7 +320,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
             for tag, parm in vnet.named_parameters():
                 summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
             if not (noisy_idx is None) and epoch >= stage1:
-                hard_labels = np.argmax(new_y, axis=1)
+                hard_labels = np.argmax(new_y[meta_epoch+1], axis=1)
                 num_true_pred = np.sum(hard_labels == clean_labels)
                 pred_similarity = (num_true_pred / clean_labels.shape[0])*100
                 summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
@@ -295,8 +338,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
     if SAVE_LOGS == 1:
         summary_writer.close()
         # write log for hyperparameters
-        hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'K':K, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA}, 
-                              {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'top5_acc':top5_acc_best, 'top1_acc':top1_acc_best, 'epoch_best':epoch_best})
+        hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup_train': MIXUP_TRAIN, 'mixup_meta':MIXUP_META}, 
+                              {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
         hp_writer.close()
         torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
 
@@ -321,11 +364,12 @@ def get_dataloaders_meta():
         idx_i = np.where(idx_i == True)
         loss_values_i = loss_values[idx_i]
         sorted_idx = np.argsort(loss_values_i)
-        inv_arr = np.exp(-1*loss_values_i)
-        prob_arr = np.array(np.exp(inv_arr)/np.sum(np.exp(inv_arr)))#
+        #inv_arr = np.exp(-1*loss_values_i)
+        #prob_arr = np.array(np.exp(inv_arr)/np.sum(np.exp(inv_arr)))#
         #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=np.array(prob_arr/np.sum(prob_arr)))
-        anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=prob_arr)
-        #anchor_idx_i = np.take(idx_i, sorted_idx[:num_meta_data_per_class])
+        #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=prob_arr)
+        selected_idx = np.random.choice(sorted_idx[:3*num_meta_data_per_class], num_meta_data_per_class, replace=False)  
+        anchor_idx_i = np.take(idx_i, selected_idx)
         if idx_meta is None:
             idx_meta = anchor_idx_i
         else:
@@ -453,7 +497,7 @@ if __name__ == "__main__":
         help="GPU ids to be used")
     parser.add_argument('-f', '--folder_log', required=False, type=str,
         help="Folder name for logs")
-    parser.add_argument('-v', '--verbose', required=False, type=int, default=2,
+    parser.add_argument('-v', '--verbose', required=False, type=int, default=0,
         help="Details of prints: 0(silent), 1(not silent)")
     parser.add_argument('-w', '--num_workers', required=False, type=int,
         help="Number of parallel workers to parse dataset")
@@ -466,6 +510,11 @@ if __name__ == "__main__":
         help="Either to use available clean data (1) or not (0)")
     parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
         help="Number of samples to be used as meta-data")
+
+    parser.add_argument('-mt', '--mixup_train', required=False, type=int, default=0,
+        help="")
+    parser.add_argument('-mm', '--mixup_meta', required=False, type=int, default=0,
+        help="")
 
     parser.add_argument('-a', '--alpha', required=False, type=float,
         help="Learning rate for meta iteration")
@@ -497,13 +546,16 @@ if __name__ == "__main__":
     BATCH_SIZE = args.batch_size if args.batch_size != None else PARAMS[dataset]['batch_size']
     NUM_CLASSES = PARAMS[dataset]['num_classes']
     NUM_FEATURES = PARAMS[dataset]['num_features']
+    NUM_META_EPOCHS = args.stage2 - args.stage1
     SAVE_LOGS = args.save_logs
     RANDOM_SEED = args.seed
+    MIXUP_TRAIN = args.mixup_train
+    MIXUP_META = args.mixup_meta
     use_clean_data = args.clean_data
     verbose = args.verbose
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:
-        gpu_ids = 0 
+        gpu_ids = 0
         ngpu = 1
     else:
         gpu_ids = args.gpu_ids[0]

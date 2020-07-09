@@ -454,30 +454,22 @@ def get_smalldata(dataset_name, random_seed, num_metadata ,num_validation, noise
 
     if dataset_name == 'mnist':
         x_train, y_train, x_test, y_test = load_mnist('{}/dataset/'.format(dataset_name))
-        # add synthetic noise
         num_classes = 10
-        y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
         class_names = np.arange(num_classes)
     elif dataset_name == 'mnist_fashion':
         x_train, y_train, x_test, y_test = load_mnist('{}/dataset/'.format(dataset_name))
         # add synthetic noise
         num_classes = 10
-        y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
         class_names = ['Tshirt_top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle_boot']
     elif dataset_name == 'cifar10':
         x_train, y_train, x_test, y_test = load_cifar10('cifar10/dataset/cifar-10-batches-py')        
         # add synthetic noise
         num_classes = 10
-        y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
         class_names = ['airplane', 'automobile', 'bird', 'cat', 'dear', 'dog', 'frog', 'horse', 'ship', 'truck']
-        # they are 2D originally in cifar
-        y_train = y_train.ravel()
-        y_test = y_test.ravel()
     elif dataset_name == 'cifar100':
         x_train, y_train, x_test, y_test = load_cifar100('cifar100/dataset/cifar-100-python')
         # add synthetic noise
         num_classes = 100
-        y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
         class_names = ['apple', 'aquarium_fish', 'baby', 'bear', 'beaver', 'bed', 'bee', 'beetle', 
                         'bicycle', 'bottle', 'bowl', 'boy', 'bridge', 'bus', 'butterfly', 'camel', 
                         'can', 'castle', 'caterpillar', 'cattle', 'chair', 'chimpanzee', 'clock', 
@@ -493,9 +485,12 @@ def get_smalldata(dataset_name, random_seed, num_metadata ,num_validation, noise
                         'tank', 'telephone', 'television', 'tiger', 'tractor', 'train', 'trout',
                         'tulip', 'turtle', 'wardrobe', 'whale', 'willow_tree', 'wolf', 'woman',
                         'worm'] 
-        # they are 2D originally in cifar
-        y_train = y_train.ravel()
-        y_test = y_test.ravel()
+
+    # add synthetic noise
+    y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
+    # they are 2D originally in cifar
+    y_train = y_train.ravel()
+    y_test = y_test.ravel()
 
     x_val, y_val, x_meta, y_meta = None, None, None, None
     x, x_test, y, y_test = train_test_split(x_test, y_test, test_size=5000, random_state=random_seed)
@@ -503,8 +498,8 @@ def get_smalldata(dataset_name, random_seed, num_metadata ,num_validation, noise
         x, x_meta, y, y_meta = train_test_split(x, y, test_size=num_metadata, random_state=random_seed)
     if num_validation > 0:
         x, x_val, y, y_val = train_test_split(x, y, test_size=num_validation, random_state=random_seed)
-    if x.shape[0] > 0:
-        x_train, y_train = np.concatenate((x_train, x)), np.concatenate((y_train, y))
+    #if x.shape[0] > 0:
+    #    x_train, y_train = np.concatenate((x_train, x)), np.concatenate((y_train, y))
 
     return x_train, y_train, x_val, y_val, x_test, y_test, x_meta, y_meta, class_names
 
