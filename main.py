@@ -22,13 +22,13 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':1, 'stage2':20, 'k':1},
-               'cifar10'           :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':44,'stage2':120,'k':1},
-               'cifar100'          :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage1':21,'stage2':60, 'k':1},
-               'clothing1M'        :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
-               'clothing1M50k'     :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
-               'clothing1Mbalanced':{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1},
-               'food101N'          :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':1}}
+PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':20},
+               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':44,'stage2':120},
+               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':44,'stage2':120},
+               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
+               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
+               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
+               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10}}
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -48,7 +48,6 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 
 def metapencil(alpha, beta, gamma, stage1, stage2, k):
     def warmup_training():
-        model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
                 start_epoch = time.time()
@@ -117,7 +116,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 summary_writer.add_scalar('val_loss', val_loss, stage1-1)
                 summary_writer.add_scalar('val_accuracy', val_accuracy, stage1-1)
 
-    def meta_training():
+    def meta_training_loop():
         vnet.train()
         # meta training for predicted labels
         lc = criterion_meta(output, yy)                                            # classification loss
@@ -159,15 +158,147 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         
         return loss
 
+    def meta_training():
+        # initialize parameters and buffers
+        t_meta_loader_iter = iter(m_dataloader) 
+        labels_yy = np.zeros(NUM_TRAINDATA)
+        test_acc_best = 0
+        val_acc_best = 0
+        epoch_best = 0
+        for epoch in range(stage1,stage2): 
+            start_epoch = time.time()
+            train_accuracy = AverageMeter()
+            train_loss = AverageMeter()
+            train_accuracy_meta = AverageMeter()
+            label_similarity = AverageMeter()
+            meta_epoch = epoch - stage1
+
+            lr = lr_scheduler(epoch)
+            set_learningrate(optimizer, lr)
+            net.train()
+            vnet.train()
+            grads_dict = OrderedDict((name, 0) for (name, param) in vnet.named_parameters()) 
+
+            for batch_idx, (images, labels) in enumerate(t_dataloader):
+                start = time.time()
+                index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+                
+                # training images and labels
+                images, labels = images.to(device), labels.to(device)
+                images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+
+                # compute output
+                output, _feats = net(images,get_feat=True)
+                _, predicted = torch.max(output.data, 1)
+
+                # predict labels
+                feats = torch.tensor(features[index], dtype=torch.float, device=device)
+                yy = vnet(feats)
+                _, labels_yy[index] = torch.max(yy.cpu(), 1)
+                # meta training images and labels
+                try:
+                    images_meta, labels_meta = next(t_meta_loader_iter)
+                except StopIteration:
+                    t_meta_loader_iter = iter(m_dataloader)
+                    images_meta, labels_meta = next(t_meta_loader_iter)
+                    images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
+                images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
+                images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
+                if MIXUP == 1:
+                    images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
+                
+                #with torch.autograd.detect_anomaly():
+                loss = meta_training_loop()
+
+                train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
+                train_loss.update(loss.item())
+                train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), predicted.size(0)) 
+                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), labels.size(0))
+
+                # keep log of gradients
+                for tag, parm in vnet.named_parameters():
+                    if parm.grad != None:
+                        grads_dict[tag] += parm.grad.data.cpu().numpy()
+
+                if verbose == 2:
+                    template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
+                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, train_loss.avg, time.time()-start))
+            if verbose == 2:
+                sys.stdout.flush()           
+
+            if SAVE_LOGS == 1:
+                np.save(log_dir + "y.npy", new_y)
+            # evaluate on validation and test data
+            val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
+            test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
+            if val_accuracy > val_acc_best: 
+                val_acc_best = val_accuracy
+                test_acc_best = test_accuracy
+                epoch_best = epoch
+
+            if SAVE_LOGS == 1:
+                summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
+                summary_writer.add_scalar('test_loss', test_loss, epoch)
+                summary_writer.add_scalar('train_accuracy', train_accuracy.percentage, epoch)
+                summary_writer.add_scalar('test_accuracy', test_accuracy, epoch)
+                summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
+                summary_writer.add_scalar('val_loss', val_loss, epoch)
+                summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
+                summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+                summary_writer.add_scalar('label_similarity', label_similarity.percentage, epoch)
+                summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
+                for tag, parm in vnet.named_parameters():
+                    summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
+                if not (noisy_idx is None) and epoch >= stage1:
+                    hard_labels = np.argmax(new_y[meta_epoch+1], axis=1)
+                    num_true_pred = np.sum(hard_labels == clean_labels)
+                    pred_similarity = (num_true_pred / clean_labels.shape[0])*100
+                    summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
+
+            if verbose > 0:
+                template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Learning rate: {}, Time: {:3.1f}({:3.2f})'
+                print(template.format(epoch + 1, 
+                                    train_accuracy.percentage, train_accuracy_meta.percentage, val_accuracy, test_accuracy,
+                                    train_loss.avg, val_loss, test_loss,  
+                                    label_similarity.percentage, lr,
+                                    time.time()-start_epoch, (time.time()-start_epoch)/3600))
+
+        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}, Hyper-params(alpha,beta,gamma,k): {:3.2f}/{:5.4f}/{:3.2f}/{:3.2f}'.format(
+            noise_type, noise_ratio, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, alpha, beta, gamma, k))
+        if SAVE_LOGS == 1:
+            summary_writer.close()
+            # write log for hyperparameters
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
+                                {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
+            hp_writer.close()
+            torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
+
+    def init_labels():
+        new_y = np.zeros([NUM_META_EPOCHS+1,NUM_TRAINDATA,NUM_CLASSES])
+        if not os.path.exists(y_init_path):
+            y_init = np.zeros([NUM_TRAINDATA,NUM_CLASSES])
+            for batch_idx, (images, labels) in enumerate(t_dataloader):
+                index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+                onehot = torch.zeros(labels.size(0), NUM_CLASSES).scatter_(1, labels.view(-1, 1), 1).cpu().numpy()
+                y_init[index, :] = onehot
+            if not os.path.exists(y_init_path):
+                np.save(y_init_path,y_init)
+        new_y[0] = np.load(y_init_path)
+        return new_y
+
     def extract_features():
-        net.eval()
-        features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
-        for batch_idx, (images, labels) in enumerate(t_dataloader):
-            images, labels = images.to(device), labels.to(device)
-            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-            output, feats = net(images,get_feat=True)
-            features[index] = feats.cpu().detach().numpy()
-        net.train()
+        if not os.path.exists(features_path):
+            net.eval()
+            features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
+            for batch_idx, (images, labels) in enumerate(t_dataloader):
+                images, labels = images.to(device), labels.to(device)
+                index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+                output, feats = net(images,get_feat=True)
+                features[index] = feats.cpu().detach().numpy()
+            net.train()
+            if not os.path.exists(features_path):
+                np.save(features_path,features)
+        features = np.load(features_path)
         return features
 
     print('use_clean:{}, mixup: {}'.format(use_clean_data, MIXUP))
@@ -195,9 +326,15 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     # get datasets
     t_dataset, m_dataset, t_dataloader, m_dataloader = train_dataset, meta_dataset, train_dataloader, meta_dataloader
     NUM_TRAINDATA = len(t_dataset)
+
     # loss functions
     criterion_cce = nn.CrossEntropyLoss()
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
+
+    # paths for save and load
+    model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
+    y_init_path = '{}/y_{}_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
+    features_path = '{}/features_{}_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
 
     # if not done beforehand, perform warmup-training
     warmup_training()
@@ -205,138 +342,14 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     # if no use clean data, extract reliable data for meta subset
     if use_clean_data == 0:
         t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta()
-    t_meta_loader_iter = iter(m_dataloader)  
-
-    # initialize parameters and buffers
-    NUM_TRAINDATA = len(t_dataset)
-    labels_yy = np.zeros(NUM_TRAINDATA)
-    new_y = np.zeros([NUM_META_EPOCHS+1,NUM_TRAINDATA,NUM_CLASSES])
-    test_acc_best = 0
-    val_acc_best = 0
-    epoch_best = 0
+        NUM_TRAINDATA = len(t_dataset)
 
     # initialize predicted labels with given labels
-    y_init_path = '{}/y_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1)
-    labels_yy = np.zeros(NUM_TRAINDATA)
-    if not os.path.exists(y_init_path):
-        y_init = np.zeros([NUM_TRAINDATA,NUM_CLASSES])
-        for batch_idx, (images, labels) in enumerate(t_dataloader):
-            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-            onehot = torch.zeros(labels.size(0), NUM_CLASSES).scatter_(1, labels.view(-1, 1), 1).cpu().numpy()
-            y_init[index, :] = onehot
-        if not os.path.exists(y_init_path):
-            np.save(y_init_path,y_init)
-    new_y[0] = np.load(y_init_path)
+    new_y = init_labels()
     # extract features for all training data
-    features = extract_features()          
-
-    for epoch in range(stage1,stage2): 
-        start_epoch = time.time()
-        train_accuracy = AverageMeter()
-        train_loss = AverageMeter()
-        train_accuracy_meta = AverageMeter()
-        label_similarity = AverageMeter()
-        meta_epoch = epoch - stage1
-
-        lr = lr_scheduler(epoch)
-        set_learningrate(optimizer, lr)
-        net.train()
-        vnet.train()
-        grads_dict = OrderedDict((name, 0) for (name, param) in vnet.named_parameters()) 
-
-        for batch_idx, (images, labels) in enumerate(t_dataloader):
-            start = time.time()
-            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-            
-            # training images and labels
-            images, labels = images.to(device), labels.to(device)
-            images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
-
-            # compute output
-            output, _feats = net(images,get_feat=True)
-            _, predicted = torch.max(output.data, 1)
-
-            # predict labels
-            feats = torch.tensor(features[index], dtype=torch.float, device=device)
-            yy = vnet(feats)
-            _, labels_yy[index] = torch.max(yy.cpu(), 1)
-            # meta training images and labels
-            try:
-                images_meta, labels_meta = next(t_meta_loader_iter)
-            except StopIteration:
-                t_meta_loader_iter = iter(m_dataloader)
-                images_meta, labels_meta = next(t_meta_loader_iter)
-                images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
-            images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
-            images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
-            if MIXUP == 1:
-                images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
-            
-            #with torch.autograd.detect_anomaly():
-            loss = meta_training()
-
-            train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
-            train_loss.update(loss.item())
-            train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), predicted.size(0)) 
-            label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), labels.size(0))
-
-            # keep log of gradients
-            for tag, parm in vnet.named_parameters():
-                if parm.grad != None:
-                    grads_dict[tag] += parm.grad.data.cpu().numpy()
-
-            if verbose == 2:
-                template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, train_loss.avg, time.time()-start))
-        if verbose == 2:
-            sys.stdout.flush()           
-
-        if SAVE_LOGS == 1:
-            np.save(log_dir + "y.npy", new_y)
-        # evaluate on validation and test data
-        val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
-        test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
-        if val_accuracy > val_acc_best: 
-            val_acc_best = val_accuracy
-            test_acc_best = test_accuracy
-            epoch_best = epoch
-
-        if SAVE_LOGS == 1:
-            summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
-            summary_writer.add_scalar('test_loss', test_loss, epoch)
-            summary_writer.add_scalar('train_accuracy', train_accuracy.percentage, epoch)
-            summary_writer.add_scalar('test_accuracy', test_accuracy, epoch)
-            summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
-            summary_writer.add_scalar('val_loss', val_loss, epoch)
-            summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
-            summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
-            summary_writer.add_scalar('label_similarity', label_similarity.percentage, epoch)
-            summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
-            for tag, parm in vnet.named_parameters():
-                summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
-            if not (noisy_idx is None) and epoch >= stage1:
-                hard_labels = np.argmax(new_y[meta_epoch+1], axis=1)
-                num_true_pred = np.sum(hard_labels == clean_labels)
-                pred_similarity = (num_true_pred / clean_labels.shape[0])*100
-                summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
-
-        if verbose > 0:
-            template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Learning rate(lr,yy): {}/{}, Time: {:3.1f}({:3.2f})'
-            print(template.format(epoch + 1, 
-                                train_accuracy.percentage, train_accuracy_meta.percentage, val_accuracy, test_accuracy,
-                                train_loss.avg, val_loss, test_loss,  
-                                label_similarity.percentage, lr, int(beta),
-                                time.time()-start_epoch, (time.time()-start_epoch)/3600))
-
-    print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}'.format(
-        noise_type, noise_ratio, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA))
-    if SAVE_LOGS == 1:
-        summary_writer.close()
-        # write log for hyperparameters
-        hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
-                              {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
-        hp_writer.close()
-        torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
+    features = extract_features() 
+    # meta training
+    meta_training()
 
 def get_dataloaders_meta():
     NUM_TRAINDATA = len(train_dataset)
@@ -518,7 +531,7 @@ if __name__ == "__main__":
         help="Epoch num to end stage1 (straight training)")
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
-    parser.add_argument('-k', required=False, type=int, default=10,
+    parser.add_argument('-k', required=False, type=int, default=1,
         help="")
 
     args = parser.parse_args()

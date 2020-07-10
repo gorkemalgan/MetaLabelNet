@@ -497,7 +497,10 @@ def get_smalldata(dataset_name, random_seed, num_metadata ,num_validation, noise
     if num_metadata > 0:
         x, x_meta, y, y_meta = train_test_split(x, y, test_size=num_metadata, random_state=random_seed)
     if num_validation > 0:
-        x, x_val, y, y_val = train_test_split(x, y, test_size=num_validation, random_state=random_seed)
+        if num_validation == x.shape[0]:
+            x_val, y_val = x, y
+        else:
+            x, x_val, y, y_val = train_test_split(x, y, test_size=num_validation, random_state=random_seed)
     #if x.shape[0] > 0:
     #    x_train, y_train = np.concatenate((x_train, x)), np.concatenate((y_train, y))
 

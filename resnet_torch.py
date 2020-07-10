@@ -96,7 +96,8 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000):
+    def __init__(self, block, layers, num_classes=1000, type_name='resnet50'):
+        self.type_name = type_name
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -146,14 +147,19 @@ class ResNet(nn.Module):
             x = self.layer3(x)
             x = self.layer4(x)
 
-            x = self.avgpool(x)
+            # required for resnet34 with CIFAR100, because at this stage size is (1x1)
+            try:
+                x = self.avgpool(x)
+            except:
+                pass
+            
             feat = x.view(x.size(0), -1)
             x = self.fc(feat)
             if get_feat:
                 return x,feat
             else:
                 return x
-        else:        
+        else:
             x = F.conv2d(x, weights['conv1.weight'], stride=2, padding=3)
             x = F.batch_norm(x, self.bn1.running_mean, self.bn1.running_var, weights['bn1.weight'], weights['bn1.bias'],training=True)            
             x = F.threshold(x, 0, 0, inplace=True)
@@ -161,27 +167,35 @@ class ResNet(nn.Module):
             #layer 1
             for i in range(3):
                 residual = x
-                out = F.conv2d(x, weights['layer1.%d.conv1.weight'%i], stride=1)
+                if self.type_name == 'resnet50':
+                    out = F.conv2d(x, weights['layer1.%d.conv1.weight'%i], stride=1)
+                elif self.type_name == 'resnet34':
+                    out = F.conv2d(x, weights['layer1.%d.conv1.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer1[i].bn1.running_mean, self.layer1[i].bn1.running_var, 
                                  weights['layer1.%d.bn1.weight'%i], weights['layer1.%d.bn1.bias'%i],training=True)      
                 out = F.threshold(out, 0, 0, inplace=True)
                 out = F.conv2d(out, weights['layer1.%d.conv2.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer1[i].bn2.running_mean, self.layer1[i].bn2.running_var, 
                                  weights['layer1.%d.bn2.weight'%i], weights['layer1.%d.bn2.bias'%i],training=True)     
-                out = F.threshold(out, 0, 0, inplace=True)
-                out = F.conv2d(out, weights['layer1.%d.conv3.weight'%i], stride=1)
-                out = F.batch_norm(out, self.layer1[i].bn3.running_mean, self.layer1[i].bn3.running_var, 
-                                 weights['layer1.%d.bn3.weight'%i], weights['layer1.%d.bn3.bias'%i],training=True)                               
+                if self.type_name == 'resnet50':
+                    out = F.threshold(out, 0, 0, inplace=True)
+                    out = F.conv2d(out, weights['layer1.%d.conv3.weight'%i], stride=1)
+                    out = F.batch_norm(out, self.layer1[i].bn3.running_mean, self.layer1[i].bn3.running_var, 
+                                    weights['layer1.%d.bn3.weight'%i], weights['layer1.%d.bn3.bias'%i],training=True)                               
                 if i==0:
-                    residual = F.conv2d(x, weights['layer1.%d.downsample.0.weight'%i], stride=1)  
-                    residual = F.batch_norm(residual, self.layer1[i].downsample[1].running_mean, self.layer1[i].downsample[1].running_var, 
-                                 weights['layer1.%d.downsample.1.weight'%i], weights['layer1.%d.downsample.1.bias'%i],training=True)  
+                    if self.type_name == 'resnet50':
+                        residual = F.conv2d(x, weights['layer1.%d.downsample.0.weight'%i], stride=1)  
+                        residual = F.batch_norm(residual, self.layer1[i].downsample[1].running_mean, self.layer1[i].downsample[1].running_var, 
+                                    weights['layer1.%d.downsample.1.weight'%i], weights['layer1.%d.downsample.1.bias'%i],training=True)  
                 x = out + residual     
                 x = F.threshold(x, 0, 0, inplace=True)
             #layer 2
             for i in range(4):
                 residual = x
-                out = F.conv2d(x, weights['layer2.%d.conv1.weight'%i], stride=1)
+                if self.type_name == 'resnet50':
+                    out = F.conv2d(x, weights['layer2.%d.conv1.weight'%i], stride=1)
+                elif self.type_name == 'resnet34':
+                    out = F.conv2d(x, weights['layer2.%d.conv1.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer2[i].bn1.running_mean, self.layer2[i].bn1.running_var, 
                                  weights['layer2.%d.bn1.weight'%i], weights['layer2.%d.bn1.bias'%i],training=True)     
                 out = F.threshold(out, 0, 0, inplace=True)
@@ -191,10 +205,11 @@ class ResNet(nn.Module):
                     out = F.conv2d(out, weights['layer2.%d.conv2.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer2[i].bn2.running_mean, self.layer2[i].bn2.running_var, 
                                  weights['layer2.%d.bn2.weight'%i], weights['layer2.%d.bn2.bias'%i],training=True)    
-                out = F.threshold(out, 0, 0, inplace=True)
-                out = F.conv2d(out, weights['layer2.%d.conv3.weight'%i], stride=1)
-                out = F.batch_norm(out, self.layer2[i].bn3.running_mean, self.layer2[i].bn3.running_var, 
-                                 weights['layer2.%d.bn3.weight'%i], weights['layer2.%d.bn3.bias'%i],training=True)                    
+                if self.type_name == 'resnet50':
+                    out = F.threshold(out, 0, 0, inplace=True)
+                    out = F.conv2d(out, weights['layer2.%d.conv3.weight'%i], stride=1)
+                    out = F.batch_norm(out, self.layer2[i].bn3.running_mean, self.layer2[i].bn3.running_var, 
+                                    weights['layer2.%d.bn3.weight'%i], weights['layer2.%d.bn3.bias'%i],training=True)                    
                 if i==0:
                     residual = F.conv2d(x, weights['layer2.%d.downsample.0.weight'%i], stride=2)  
                     residual = F.batch_norm(residual, self.layer2[i].downsample[1].running_mean, self.layer2[i].downsample[1].running_var, 
@@ -204,7 +219,10 @@ class ResNet(nn.Module):
             #layer 3
             for i in range(6):
                 residual = x
-                out = F.conv2d(x, weights['layer3.%d.conv1.weight'%i], stride=1)
+                if self.type_name == 'resnet50':
+                    out = F.conv2d(x, weights['layer3.%d.conv1.weight'%i], stride=1)
+                elif self.type_name == 'resnet34':
+                    out = F.conv2d(x, weights['layer3.%d.conv1.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer3[i].bn1.running_mean, self.layer3[i].bn1.running_var, 
                                  weights['layer3.%d.bn1.weight'%i], weights['layer3.%d.bn1.bias'%i],training=True)   
                 out = F.threshold(out, 0, 0, inplace=True)
@@ -214,10 +232,11 @@ class ResNet(nn.Module):
                     out = F.conv2d(out, weights['layer3.%d.conv2.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer3[i].bn2.running_mean, self.layer3[i].bn2.running_var, 
                                  weights['layer3.%d.bn2.weight'%i], weights['layer3.%d.bn2.bias'%i],training=True)     
-                out = F.threshold(out, 0, 0, inplace=True)
-                out = F.conv2d(out, weights['layer3.%d.conv3.weight'%i], stride=1)
-                out = F.batch_norm(out, self.layer3[i].bn3.running_mean, self.layer3[i].bn3.running_var, 
-                                 weights['layer3.%d.bn3.weight'%i], weights['layer3.%d.bn3.bias'%i],training=True)                    
+                if self.type_name == 'resnet50':
+                    out = F.threshold(out, 0, 0, inplace=True)
+                    out = F.conv2d(out, weights['layer3.%d.conv3.weight'%i], stride=1)
+                    out = F.batch_norm(out, self.layer3[i].bn3.running_mean, self.layer3[i].bn3.running_var, 
+                                    weights['layer3.%d.bn3.weight'%i], weights['layer3.%d.bn3.bias'%i],training=True)                    
                 if i==0:
                     residual = F.conv2d(x, weights['layer3.%d.downsample.0.weight'%i], stride=2)  
                     residual = F.batch_norm(residual, self.layer3[i].downsample[1].running_mean, self.layer3[i].downsample[1].running_var, 
@@ -227,7 +246,10 @@ class ResNet(nn.Module):
             #layer 4
             for i in range(3):
                 residual = x
-                out = F.conv2d(x, weights['layer4.%d.conv1.weight'%i], stride=1)
+                if self.type_name == 'resnet50':
+                    out = F.conv2d(x, weights['layer4.%d.conv1.weight'%i], stride=1)
+                elif self.type_name == 'resnet34':
+                    out = F.conv2d(x, weights['layer4.%d.conv1.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer4[i].bn1.running_mean, self.layer4[i].bn1.running_var, 
                                  weights['layer4.%d.bn1.weight'%i], weights['layer4.%d.bn1.bias'%i],training=True)   
                 out = F.threshold(out, 0, 0, inplace=True)
@@ -237,10 +259,11 @@ class ResNet(nn.Module):
                     out = F.conv2d(out, weights['layer4.%d.conv2.weight'%i], stride=1, padding=1)
                 out = F.batch_norm(out, self.layer4[i].bn2.running_mean, self.layer4[i].bn2.running_var, 
                                  weights['layer4.%d.bn2.weight'%i], weights['layer4.%d.bn2.bias'%i],training=True)   
-                out = F.threshold(out, 0, 0, inplace=True)
-                out = F.conv2d(out, weights['layer4.%d.conv3.weight'%i], stride=1)
-                out = F.batch_norm(out, self.layer4[i].bn3.running_mean, self.layer4[i].bn3.running_var, 
-                                 weights['layer4.%d.bn3.weight'%i], weights['layer4.%d.bn3.bias'%i],training=True)                    
+                if self.type_name == 'resnet50':
+                    out = F.threshold(out, 0, 0, inplace=True)
+                    out = F.conv2d(out, weights['layer4.%d.conv3.weight'%i], stride=1)
+                    out = F.batch_norm(out, self.layer4[i].bn3.running_mean, self.layer4[i].bn3.running_var, 
+                                    weights['layer4.%d.bn3.weight'%i], weights['layer4.%d.bn3.bias'%i],training=True)                    
                 if i==0:
                     residual = F.conv2d(x, weights['layer4.%d.downsample.0.weight'%i], stride=2)  
                     residual = F.batch_norm(residual, self.layer4[i].downsample[1].running_mean, self.layer4[i].downsample[1].running_var, 
@@ -248,7 +271,10 @@ class ResNet(nn.Module):
                 x = out + residual    
                 x = F.threshold(x, 0, 0, inplace=True)
                 
-            x = F.avg_pool2d(x, kernel_size=7, stride=1, padding=0)
+            try:
+                x = F.avg_pool2d(x, kernel_size=7, stride=1, padding=0)
+            except:
+                pass
             x = x.view(x.size(0), -1)
             x = F.linear(x, weights['fc.weight'], weights['fc.bias'])                
             return x
@@ -270,7 +296,7 @@ def resnet34(pretrained=False, **kwargs):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
+    model = ResNet(BasicBlock, [3, 4, 6, 3], type_name='resnet34', **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet34']))
     return model
@@ -281,7 +307,7 @@ def resnet50(pretrained=False, **kwargs):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    model = ResNet(Bottleneck, [3, 4, 6, 3], type_name='resnet50', **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
     return model

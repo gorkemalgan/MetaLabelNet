@@ -99,8 +99,8 @@ def resnet34(framework, num_classes, input_shape, dataset):
             net = resnet34(pretrained=True)
         except:
             net = resnet34(pretrained=False)
-            #net.load_state_dict(torch.load('resnet50.pt'))
-        net.fc = nn.Linear(2048,num_classes)
+            net.load_state_dict(torch.load('resnet34.pt'))
+        net.fc = nn.Linear(512,num_classes)
         return net
     elif framework == 'tensorflow':
         return None

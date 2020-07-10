@@ -53,7 +53,7 @@ def cross_entropy(criterion):
 
             if verbose == 2:
                 sys.stdout.write("Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                                .format(batch_idx*BATCH_SIZE/PARAMS[dataset]['num_traindata'], train_accuracy.percentage, train_loss.avg, time.time()-start))
+                                .format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
         if verbose == 2:
             sys.stdout.flush()
                 
@@ -218,7 +218,7 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
         # switch to train mode
         net.train()
         # new y is y_tilde after updating
-        new_y = np.zeros([PARAMS[dataset]['num_traindata'],PARAMS[dataset]['num_classes']])
+        new_y = np.zeros([NUM_TRAINDATA,PARAMS[dataset]['num_classes']])
 
         for batch_idx, (images, labels) in enumerate(train_dataloader):
             start = time.time()
@@ -280,7 +280,7 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
 
             if verbose == 2:
                 sys.stdout.write("Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                                .format(batch_idx*BATCH_SIZE/PARAMS[dataset]['num_traindata'], train_accuracy.percentage, train_loss.avg, time.time()-start))
+                                .format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
         if verbose == 2:
             sys.stdout.flush()
 
@@ -409,7 +409,7 @@ def coteaching(criterion):
 
             if verbose == 2:
                 sys.stdout.write("Progress: {:6.5f}, Accuracy1: {:5.4f}, Loss1: {:5.4f}, Accuracy2: {:5.4f}, Loss2: {:5.4f}, Process time:{:5.4f}   \r"
-                             .format(batch_idx*BATCH_SIZE/PARAMS[dataset]['num_traindata'], 
+                             .format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, 
                              train_accuracy1.avg, train_loss1.avg, train_accuracy2.avg, train_loss2.avg, time.time()-start))
         if verbose == 2:
             sys.stdout.flush()
@@ -577,7 +577,7 @@ def metaweightnet():
 
             if verbose == 2:
                 sys.stdout.write("Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                                .format(batch_idx*BATCH_SIZE/PARAMS[dataset]['num_traindata'], train_accuracy.percentage, train_loss.avg, time.time()-start))
+                                .format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
         if verbose == 2:
             sys.stdout.flush()
 
@@ -715,7 +715,7 @@ def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0
 
             if verbose == 2:
                 sys.stdout.write("Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                                .format(batch_idx*BATCH_SIZE/PARAMS[dataset]['num_traindata'], train_accuracy.percentage, train_loss.avg, time.time()-start))
+                                .format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
         if verbose == 2:
             sys.stdout.flush()
                 
@@ -807,7 +807,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='clothing1M50k',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-m', '--model_name', required=False, type=str, default='cross_entropy',
         help="""Model name: 'cross_entropy', 
@@ -902,5 +902,6 @@ if __name__ == "__main__":
     optimizer = optim.SGD(net.parameters(), lr=lr_scheduler(0), momentum=0.9, weight_decay=1e-4)
     summary_writer = SummaryWriter(log_dir)
     train_dataloader, val_dataloader, test_dataloader, class_names = get_dataloader(dataset, BATCH_SIZE,framework,noise_type,noise_ratio,args.seed,num_workers)
+    NUM_TRAINDATA = len(train_dataloader.dataset)
 
     main(args)

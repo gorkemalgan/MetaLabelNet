@@ -4,7 +4,7 @@ import datetime
 current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 PARAMS = {'mnist_fashion'     :{'epochs':25, 'batch_size':32, 'num_classes':10 , 'num_features': 256},
           'cifar10'           :{'epochs':120,'batch_size':128,'num_classes':10 , 'num_features': 256},
-          'cifar100'          :{'epochs':120,'batch_size':32, 'num_classes':100, 'num_features': 256},
+          'cifar100'          :{'epochs':120,'batch_size':32, 'num_classes':100, 'num_features': 512},
           'clothing1M'        :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'clothing1M50k'     :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'clothing1Mbalanced':{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
@@ -28,6 +28,15 @@ def get_lr_scheduler(dataset):
             else:
                 return 0.01
         return lr_scheduler_cifar10
+    elif dataset == 'cifar100':
+        def lr_scheduler_cifar100(epoch):
+            if epoch > 80:
+                return 0.001
+            elif epoch > 40:
+                return 0.01
+            else:
+                return 0.1
+        return lr_scheduler_cifar100
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced' or dataset == 'food101N':
         def lr_scheduler_clothing1M(epoch):
             if epoch < 5:
