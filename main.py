@@ -116,7 +116,9 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 summary_writer.add_scalar('val_loss', val_loss, stage1-1)
                 summary_writer.add_scalar('val_accuracy', val_accuracy, stage1-1)
 
-    def meta_training_loop():
+    def meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats):
+        if MIXUP == 1:
+            images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
         vnet.train()
         # meta training for predicted labels
         lc = criterion_meta(output, yy)                                            # classification loss
@@ -132,7 +134,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
             loss_meta = mixup_criterion(criterion_cce, fast_out, targets_a_meta, targets_b_meta, lam_meta)
         else:
             loss_meta = criterion_cce(fast_out, labels_meta)
-            loss_compatibility = criterion_cce(yy, labels)
+        loss_compatibility = criterion_cce(yy, labels)
         loss_all = loss_meta + gamma*loss_compatibility
 
         optimizer_vnet.zero_grad()
@@ -204,11 +206,9 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
                 images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
                 images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
-                if MIXUP == 1:
-                    images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
                 
                 #with torch.autograd.detect_anomaly():
-                loss = meta_training_loop()
+                loss = meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats)
 
                 train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
                 train_loss.update(loss.item())
@@ -531,7 +531,7 @@ if __name__ == "__main__":
         help="Epoch num to end stage1 (straight training)")
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
-    parser.add_argument('-k', required=False, type=int, default=1,
+    parser.add_argument('-k', required=False, type=float, default=1,
         help="")
 
     args = parser.parse_args()
