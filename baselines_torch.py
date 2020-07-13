@@ -88,6 +88,7 @@ def cross_entropy(criterion):
 def symmetric_crossentropy():
     """
     2019 - ICCV - Symmetric Cross Entropy for Robust Learning with Noisy Labels" 
+    github repo: https://github.com/YisenWang/symmetric_cross_entropy_for_noisy_labels
     """
     def criterion(y_pred, y_true):
         y_true_1 = nn.functional.one_hot(y_true ,num_classes)
@@ -125,6 +126,7 @@ def generalized_crossentropy():
 def bootstrap_soft():
     """
     2015 - ICLR - Training deep neural networks on noisy labels with bootstrapping.
+    github repo: https://github.com/dwright04/Noisy-Labels-with-Bootstrapping
     """
     def criterion(y_pred,y_true):
         y_pred_softmax = nn.functional.softmax(y_pred, dim=1)
@@ -140,6 +142,7 @@ def bootstrap_soft():
 def forwardloss(P):
     """
     2017 - CVPR - Making Deep Neural Networks Robust to Label Noise: a Loss Correction Approach
+    github repo: https://github.com/giorgiop/loss-correction
     """
     def criterion(y_pred, y_true):
         y_p = nn.functional.softmax(torch.mm(y_pred, P), dim=1)
@@ -154,6 +157,7 @@ def forwardloss(P):
 def joint_optimization():
     """
     2018 - CVPR - Joint optimization framework for learning with noisy labels.
+    github repo: https://github.com/DaikiTanaka-UT/JointOptimization
     """
     sparse_categorical_crossentropy = nn.CrossEntropyLoss()
     def criterion(y_pred, y_true):
@@ -172,6 +176,7 @@ def joint_optimization():
 def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lambda2, k):
     '''
     2019 - CVPR - Probabilistic End-to-end Noise Correction for Learning with Noisy Labels
+    github repo: https://github.com/yikun2019/PENCIL
     '''
     PARAMS_PENCIL = {'mnist_fashion':{'alpha':0.1, 'beta':0.8, 'stage1':3, 'stage2':20, 'stage3':25, 'type_lr':'constant', 'lambda1':400, 'lambda2':0, 'k':10},
                      'cifar10'      :{'alpha':0.1, 'beta':0.8, 'stage1':21,'stage2':80, 'stage3':120, 'type_lr':'constant', 'lambda1':400, 'lambda2':0, 'k':10},
@@ -322,6 +327,7 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
 def coteaching(criterion):
     '''
     2018 - NIPS - Co-teaching: Robust training of deep neural networks with extremely noisy labels
+    github repo: https://github.com/bhanML/Co-teaching
     '''
     # get model 
     net1 = get_model(dataset,framework).to(device)
@@ -483,6 +489,7 @@ def coteaching(criterion):
 def metaweightnet():
     '''
     2019 - NIPS - Meta-weight-net: Learning an explicit mapping for sample weighting
+    github repo: https://github.com/xjtushujun/meta-weight-net
     '''
     train_meta_loader = val_dataloader
 
@@ -612,6 +619,7 @@ def metaweightnet():
 def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0.99, args_alpha=1,num_fast=10,perturb_ratio=0.5,meta_lr=0.2):
     '''
     2019 - CVPR - Learning to Learn from Noisy Labeled Data
+    github repo: https://github.com/LiJunnan1992/MLNT
     '''
     # get model 
     path = Path(log_dir)

@@ -47,7 +47,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 def metapencil(alpha, beta, gamma, stage1, stage2, k):
-    def warmup_training():
+    def warmup_training(model_s1_path):
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
                 start_epoch = time.time()
@@ -102,8 +102,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                                         train_accuracy.percentage, val_accuracy, test_accuracy,
                                         train_loss.avg, val_loss, test_loss,  
                                         lr, time.time()-start_epoch, (time.time()-start_epoch)/3600))   
-                torch.save(net.cpu().state_dict(), model_s1_path)
-                net.to(device) 
+            torch.save(net.cpu().state_dict(), model_s1_path)
+            net.to(device) 
         else:
             net.load_state_dict(torch.load(model_s1_path, map_location=device))  
             val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
@@ -119,7 +119,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     def meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats):
         if MIXUP == 1:
             images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
-        vnet.train()
+        meta_net.train()
         # meta training for predicted labels
         lc = criterion_meta(output, yy)                                            # classification loss
         # train for classification loss with meta-learning
@@ -137,14 +137,14 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         loss_compatibility = criterion_cce(yy, labels)
         loss_all = loss_meta + gamma*loss_compatibility
 
-        optimizer_vnet.zero_grad()
-        vnet.zero_grad()
+        optimizer_meta_net.zero_grad()
+        meta_net.zero_grad()
         loss_all.backward(retain_graph=True)
-        optimizer_vnet.step()
+        optimizer_meta_net.step()
 
         # update labels
-        vnet.eval()
-        _yy = vnet(feats).detach()
+        meta_net.eval()
+        _yy = meta_net(feats).detach()
         new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
         del grads
 
@@ -156,7 +156,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         net.zero_grad()
         loss.backward()
         optimizer.step()
-        vnet.train()
+        meta_net.train()
         
         return loss
 
@@ -178,8 +178,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
             lr = lr_scheduler(epoch)
             set_learningrate(optimizer, lr)
             net.train()
-            vnet.train()
-            grads_dict = OrderedDict((name, 0) for (name, param) in vnet.named_parameters()) 
+            meta_net.train()
+            grads_dict = OrderedDict((name, 0) for (name, param) in meta_net.named_parameters()) 
 
             for batch_idx, (images, labels) in enumerate(t_dataloader):
                 start = time.time()
@@ -195,7 +195,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
 
                 # predict labels
                 feats = torch.tensor(features[index], dtype=torch.float, device=device)
-                yy = vnet(feats)
+                yy = meta_net(feats)
                 _, labels_yy[index] = torch.max(yy.cpu(), 1)
                 # meta training images and labels
                 try:
@@ -216,7 +216,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), labels.size(0))
 
                 # keep log of gradients
-                for tag, parm in vnet.named_parameters():
+                for tag, parm in meta_net.named_parameters():
                     if parm.grad != None:
                         grads_dict[tag] += parm.grad.data.cpu().numpy()
 
@@ -247,7 +247,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
                 summary_writer.add_scalar('label_similarity', label_similarity.percentage, epoch)
                 summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
-                for tag, parm in vnet.named_parameters():
+                for tag, parm in meta_net.named_parameters():
                     summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
                 if not (noisy_idx is None) and epoch >= stage1:
                     hard_labels = np.argmax(new_y[meta_epoch+1], axis=1)
@@ -268,12 +268,12 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':use_clean_data, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':meta_data_type, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
                                 {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
 
-    def init_labels():
+    def init_labels(y_init_path):
         new_y = np.zeros([NUM_META_EPOCHS+1,NUM_TRAINDATA,NUM_CLASSES])
         if not os.path.exists(y_init_path):
             y_init = np.zeros([NUM_TRAINDATA,NUM_CLASSES])
@@ -286,7 +286,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         new_y[0] = np.load(y_init_path)
         return new_y
 
-    def extract_features():
+    def extract_features(features_path):
         if not os.path.exists(features_path):
             net.eval()
             features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
@@ -301,12 +301,12 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         features = np.load(features_path)
         return features
 
-    print('use_clean:{}, mixup: {}'.format(use_clean_data, MIXUP))
+    print('use_clean:{}, mixup: {}'.format(meta_data_type, MIXUP))
     print('alpha:{}, beta:{}, gamma:{}, k:{}, stage1:{}, stage2:{}'.format(alpha, beta, gamma, k, stage1, stage2))
 
-    class VNet(nn.Module):
+    class MetaNet(nn.Module):
         def __init__(self, input, output):
-            super(VNet, self).__init__()
+            super(MetaNet, self).__init__()
             layer1_size = input
             layer2_size = int(input/2)
             self.linear1 = nn.Linear(layer1_size, layer1_size)
@@ -319,9 +319,9 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
             x = F.relu(self.bn2(self.linear2(x)))
             out = self.linear3(x)
             return softmax(out)
-    vnet = VNet(NUM_FEATURES, NUM_CLASSES).to(device)
-    optimizer_vnet = torch.optim.Adam(vnet.parameters(), beta, weight_decay=1e-4)
-    vnet.train()
+    meta_net = MetaNet(NUM_FEATURES, NUM_CLASSES).to(device)
+    optimizer_meta_net = torch.optim.Adam(meta_net.parameters(), beta, weight_decay=1e-4)
+    meta_net.train()
 
     # get datasets
     t_dataset, m_dataset, t_dataloader, m_dataloader = train_dataset, meta_dataset, train_dataloader, meta_dataloader
@@ -332,56 +332,100 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
 
     # paths for save and load
-    model_s1_path = '{}/{}_{}_{}_{}_{}.pt'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
-    y_init_path = '{}/y_{}_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
-    features_path = '{}/features_{}_{}_{}_{}_{}.npy'.format(dataset,noise_type,noise_ratio,NUM_TRAINDATA,stage1,RANDOM_SEED)
+    path_ext = '{}_{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1,meta_data_type=='validation')
+    if dataset in DATASETS_SMALL:
+        path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
+    model_s1_path = '{}/model_s1_{}.pt'.format(dataset,path_ext)
+    y_init_path = '{}/yinit_{}.npy'.format(dataset,path_ext)
+    features_path = '{}/features_{}.npy'.format(dataset,path_ext)
 
     # if not done beforehand, perform warmup-training
-    warmup_training()
+    warmup_training(model_s1_path)
 
     # if no use clean data, extract reliable data for meta subset
-    if use_clean_data == 0:
-        t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta()
+    if meta_data_type  != 'validation':
+        # extract features for all training data
+        features4meta = extract_features(features_path) 
+        # aggragate label information
+        labels4meta = init_labels(y_init_path)
+        # contrcut the new training and meta data
+        t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta(features4meta, labels4meta[0],meta_data_type)
         NUM_TRAINDATA = len(t_dataset)
+        # update paths since NUM_TRAINDATA is changed
+        path_ext = '{}_{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1,meta_data_type=='validation')
+        if dataset in DATASETS_SMALL:
+            path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
+        model_s1_path = '{}/model_s1_{}.pt'.format(dataset,path_ext)
+        y_init_path = '{}/yinit_{}.npy'.format(dataset,path_ext)
+        features_path = '{}/features_{}.npy'.format(dataset,path_ext)
+        # if not done beforehand, perform warmup-training
+        warmup_training(model_s1_path)
 
     # initialize predicted labels with given labels
-    new_y = init_labels()
+    new_y = init_labels(y_init_path)
     # extract features for all training data
-    features = extract_features() 
+    features = extract_features(features_path) 
     # meta training
     meta_training()
 
-def get_dataloaders_meta():
+def get_dataloaders_meta(features4meta, labels4meta,meta_data_type):
+    from scipy.spatial import distance
     NUM_TRAINDATA = len(train_dataset)
     num_meta_data_per_class = int(NUM_METADATA/NUM_CLASSES)
+    labels = np.argmax(labels4meta, axis=1)
     idx_meta = None
     
-    loss_values = np.zeros(NUM_TRAINDATA)
-    label_values = np.zeros(NUM_TRAINDATA)
-    
-    c = nn.CrossEntropyLoss(reduction='none').to(device)
-    for batch_idx, (images, labels) in enumerate(train_dataloader):
-        images, labels = images.to(device), labels.to(device)
-        index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-        output = net(images)
-        loss = c(output, labels)
-        loss_values[index] = loss.detach().cpu().numpy()
-        label_values[index] = labels.cpu().numpy()
-    for i in range(NUM_CLASSES):
-        idx_i = label_values == i
-        idx_i = np.where(idx_i == True)
-        loss_values_i = loss_values[idx_i]
-        sorted_idx = np.argsort(loss_values_i)
-        #inv_arr = np.exp(-1*loss_values_i)
-        #prob_arr = np.array(np.exp(inv_arr)/np.sum(np.exp(inv_arr)))#
-        #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=np.array(prob_arr/np.sum(prob_arr)))
-        #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=prob_arr)
-        selected_idx = np.random.choice(sorted_idx[:3*num_meta_data_per_class], num_meta_data_per_class, replace=False)  
-        anchor_idx_i = np.take(idx_i, selected_idx)
-        if idx_meta is None:
-            idx_meta = anchor_idx_i
-        else:
-            idx_meta = np.concatenate((idx_meta,anchor_idx_i))
+    if meta_data_type == 'mahalanobis' or meta_data_type == 'euclidean':
+        # get idx of samples for each classes
+        for i in range(NUM_CLASSES):
+            idx_i = labels == i
+            idx_i = np.where(idx_i == True)[0]
+
+            centroid_i = np.mean(features4meta[idx_i], axis = 0)
+            cov_i = np.cov(features4meta[idx_i].transpose())
+            invcov_i = np.linalg.inv(cov_i)
+            distances_i = np.zeros(len(idx_i))
+            for j in range(len(idx_i)):
+                if meta_data_type == 'mahalanobis':
+                    distances_i[j] = distance.mahalanobis(features4meta[idx_i[j]], centroid_i, invcov_i)
+                elif meta_data_type == 'euclidean':
+                    distances_i[j] = distance.euclidean(features4meta[idx_i[j]], centroid_i)
+            sorted_idx_i = np.argsort(distances_i)
+            anchor_idx_i = np.take(idx_i, sorted_idx_i[:num_meta_data_per_class])
+            if idx_meta is None:
+                idx_meta = anchor_idx_i
+            else:
+                idx_meta = np.concatenate((idx_meta,anchor_idx_i))
+    elif meta_data_type == 'loss':
+        loss_values = np.zeros(NUM_TRAINDATA)
+        label_values = np.zeros(NUM_TRAINDATA)
+        
+        c = nn.CrossEntropyLoss(reduction='none').to(device)
+        for batch_idx, (images, labels) in enumerate(train_dataloader):
+            images, labels = images.to(device), labels.to(device)
+            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+            output = net(images)
+            loss = c(output, labels)
+            loss_values[index] = loss.detach().cpu().numpy()
+            label_values[index] = labels.cpu().numpy()
+        for i in range(NUM_CLASSES):
+            idx_i = label_values == i
+            idx_i = np.where(idx_i == True)
+            loss_values_i = loss_values[idx_i]
+            sorted_idx = np.argsort(loss_values_i)
+            #inv_arr = np.exp(-1*loss_values_i)
+            #prob_arr = np.array(np.exp(inv_arr)/np.sum(np.exp(inv_arr)))#
+            #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=np.array(prob_arr/np.sum(prob_arr)))
+            #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=prob_arr)
+            selected_idx = np.random.choice(sorted_idx[:3*num_meta_data_per_class], num_meta_data_per_class, replace=False)  
+            anchor_idx_i = np.take(idx_i, selected_idx)
+            if idx_meta is None:
+                idx_meta = anchor_idx_i
+            else:
+                idx_meta = np.concatenate((idx_meta,anchor_idx_i))
+    else:
+        assert False, 'use_clean should be one of: validation, loss, mahalanobis or euclidean'
+
     random.Random(RANDOM_SEED).shuffle(idx_meta)
     idx_train = np.setdiff1d(np.arange(NUM_TRAINDATA),np.array(idx_meta))
 
@@ -493,7 +537,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='clothing1Mbalanced',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-n', '--noise_type', required=False, type=str, default='feature-dependent',
         help="Noise type for cifar10: 'feature-dependent', 'symmetric'")
@@ -514,8 +558,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
     
-    parser.add_argument('-c', '--clean_data', required=False, type=int, default=1,
-        help="Either to use available clean data (1) or not (0)")
+    parser.add_argument('-c', '--clean_data_type', required=False, type=str, default='validation',
+        help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
     parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
         help="Number of samples to be used as meta-data")
     parser.add_argument('-mu', '--mixup', required=False, type=int, default=0,
@@ -555,7 +599,7 @@ if __name__ == "__main__":
     SAVE_LOGS = args.save_logs
     RANDOM_SEED = args.seed
     MIXUP = args.mixup
-    use_clean_data = args.clean_data
+    meta_data_type = args.clean_data_type
     verbose = args.verbose
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:
@@ -577,7 +621,7 @@ if __name__ == "__main__":
     # create necessary folders
     create_folder('{}/dataset'.format(dataset))
     # global variables
-    if use_clean_data == 0:
+    if meta_data_type != 'validation':
         train_dataset, val_dataset, test_dataset, meta_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,RANDOM_SEED,0,0)
         noisy_idx, clean_labels = get_synthetic_idx(dataset,RANDOM_SEED,0,0,noise_type,noise_ratio)
         meta_dataloader = None
@@ -604,7 +648,7 @@ if __name__ == "__main__":
     # if logging
     if SAVE_LOGS == 1:
         base_folder = model_name if dataset in DATASETS_BIG else noise_type + '/' + str(args.noise_ratio) + '/' + model_name
-        log_folder = args.folder_log if args.folder_log else 'c{}_a{}_b{}_g{}_s{}_m{}_{}'.format(use_clean_data, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
+        log_folder = args.folder_log if args.folder_log else 'c{}_a{}_b{}_g{}_s{}_m{}_{}'.format(meta_data_type, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
         log_base = '{}/logs/{}/'.format(dataset, base_folder)
         log_dir = log_base + log_folder + '/'
         log_dir_hp = '{}/logs_hp/{}/'.format(dataset, base_folder)
