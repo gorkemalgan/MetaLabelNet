@@ -332,12 +332,12 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
 
     # paths for save and load
-    path_ext = '{}_{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1,meta_data_type=='validation')
+    path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
     if dataset in DATASETS_SMALL:
         path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
-    model_s1_path = '{}/model_s1_{}.pt'.format(dataset,path_ext)
-    y_init_path = '{}/yinit_{}.npy'.format(dataset,path_ext)
-    features_path = '{}/features_{}.npy'.format(dataset,path_ext)
+    model_s1_path = '{}/model_s1_{}_{}.pt'.format(dataset,path_ext,meta_data_type=='validation')
+    y_init_path = '{}/yinit_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
+    features_path = '{}/features_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
 
     # if not done beforehand, perform warmup-training
     warmup_training(model_s1_path)
@@ -352,14 +352,14 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta(features4meta, labels4meta[0],meta_data_type)
         NUM_TRAINDATA = len(t_dataset)
         # update paths since NUM_TRAINDATA is changed
-        path_ext = '{}_{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1,meta_data_type=='validation')
+        path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
         if dataset in DATASETS_SMALL:
             path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
-        model_s1_path = '{}/model_s1_{}.pt'.format(dataset,path_ext)
-        y_init_path = '{}/yinit_{}.npy'.format(dataset,path_ext)
-        features_path = '{}/features_{}.npy'.format(dataset,path_ext)
+        model_s1_path = '{}/model_s1_{}_{}.pt'.format(dataset,path_ext,meta_data_type=='validation')
+        y_init_path = '{}/yinit_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
+        features_path = '{}/features_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
         # if not done beforehand, perform warmup-training
-        warmup_training(model_s1_path)
+        #warmup_training(model_s1_path)
 
     # initialize predicted labels with given labels
     new_y = init_labels(y_init_path)
