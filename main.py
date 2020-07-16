@@ -22,13 +22,13 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':20},
-               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':44,'stage2':120},
-               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':44,'stage2':120},
-               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
-               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
-               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10},
-               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':1, 'stage1':1, 'stage2':10}}
+PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':1, 'stage2':20},
+               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':44,'stage2':120},
+               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':44,'stage2':120},
+               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':1, 'stage2':10},
+               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':1, 'stage2':10},
+               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':1, 'stage2':10},
+               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'k':0.3, 'stage1':1, 'stage2':10}}
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -38,7 +38,7 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
         lam = 1
 
     batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(device)
+    index = torch.randperm(batch_size).to(DEVICE)
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
@@ -62,7 +62,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     start = time.time()
                     
                     # training images and labels
-                    images, labels = images.to(device), labels.to(device)
+                    images, labels = images.to(DEVICE), labels.to(DEVICE)
                     images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
 
                     # compute output
@@ -78,10 +78,10 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
                     train_loss.update(loss.item())
                     
-                    if verbose == 2:
+                    if VERBOSE == 2:
                         template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
                         sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_loss.avg, time.time()-start))
-                if verbose == 2:
+                if VERBOSE == 2:
                     sys.stdout.flush()  
                     
                 # evaluate on validation and test data
@@ -96,19 +96,19 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
                     summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
 
-                if verbose > 0:
+                if VERBOSE > 0:
                     template = 'Epoch {}, Accuracy(train,val,test): {:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f},Learning rate: {}, Time: {:3.1f}({:3.2f})'
                     print(template.format(epoch + 1, 
                                         train_accuracy.percentage, val_accuracy, test_accuracy,
                                         train_loss.avg, val_loss, test_loss,  
                                         lr, time.time()-start_epoch, (time.time()-start_epoch)/3600))   
             torch.save(net.cpu().state_dict(), model_s1_path)
-            net.to(device) 
+            net.to(DEVICE) 
         else:
-            net.load_state_dict(torch.load(model_s1_path, map_location=device))  
+            net.load_state_dict(torch.load(model_s1_path, map_location=DEVICE))  
             val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
             test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
-            if verbose > 0:
+            if VERBOSE > 0:
                 print('Pretrained model, Accuracy(val,test): {:3.1f}/{:3.1f}, Loss(val,test): {:4.3f}/{:4.3f}'.format(val_accuracy, test_accuracy,val_loss, test_loss))
             if SAVE_LOGS == 1:
                 summary_writer.add_scalar('test_loss', test_loss, stage1-1)
@@ -151,7 +151,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         # training base network
         lc = criterion_meta(output, _yy)                                # classification loss
         le = -torch.mean(torch.mul(softmax(output), logsoftmax(output)))# entropy loss
-        loss = lc + k*le                                                # overall loss
+        loss = lc + le                                                  # overall loss
         optimizer.zero_grad()
         net.zero_grad()
         loss.backward()
@@ -186,7 +186,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
                 
                 # training images and labels
-                images, labels = images.to(device), labels.to(device)
+                images, labels = images.to(DEVICE), labels.to(DEVICE)
                 images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
 
                 # compute output
@@ -194,7 +194,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                 _, predicted = torch.max(output.data, 1)
 
                 # predict labels
-                feats = torch.tensor(features[index], dtype=torch.float, device=device)
+                feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
                 yy = meta_net(feats)
                 _, labels_yy[index] = torch.max(yy.cpu(), 1)
                 # meta training images and labels
@@ -204,7 +204,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     t_meta_loader_iter = iter(m_dataloader)
                     images_meta, labels_meta = next(t_meta_loader_iter)
                     images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
-                images_meta, labels_meta = images_meta.to(device), labels_meta.to(device)
+                images_meta, labels_meta = images_meta.to(DEVICE), labels_meta.to(DEVICE)
                 images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
                 
                 #with torch.autograd.detect_anomaly():
@@ -212,18 +212,18 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
 
                 train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
                 train_loss.update(loss.item())
-                train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), predicted.size(0)) 
-                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(device)).cpu().sum().item(), labels.size(0))
+                train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
+                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), labels.size(0))
 
                 # keep log of gradients
                 for tag, parm in meta_net.named_parameters():
                     if parm.grad != None:
                         grads_dict[tag] += parm.grad.data.cpu().numpy()
 
-                if verbose == 2:
+                if VERBOSE == 2:
                     template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
                     sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, train_loss.avg, time.time()-start))
-            if verbose == 2:
+            if VERBOSE == 2:
                 sys.stdout.flush()           
 
             if SAVE_LOGS == 1:
@@ -255,21 +255,21 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
                     pred_similarity = (num_true_pred / clean_labels.shape[0])*100
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
-            if verbose > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Learning rate: {}, Time: {:3.1f}({:3.2f})'
+            if VERBOSE > 0:
+                template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Hyper-params(alpha,beta,gamma,k,c): {:3.2f}/{:5.4f}/{:3.2f}/{:3.2f}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, lr,
+                                    label_similarity.percentage, alpha, beta, gamma, k, METADATA_TYPE,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}, Hyper-params(alpha,beta,gamma,k): {:3.2f}/{:5.4f}/{:3.2f}/{:3.2f}'.format(
-            noise_type, noise_ratio, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, alpha, beta, gamma, k))
+        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}, Hyper-params(alpha,beta,gamma,k,c): {:3.2f}/{:5.4f}/{:3.2f}/{:3.2f}/{}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, alpha, beta, gamma, k, METADATA_TYPE))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':meta_data_type, 'num_meta':NUM_METADATA, 'mixup': MIXUP}, 
-                                {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'k':k, 'stage1':stage1, 'use_clean':METADATA_TYPE, 'num_meta':NUM_METADATA, 'mixup': MIXUP, 'num_train': NUM_TRAINDATA}, 
+                                  {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
 
@@ -286,22 +286,27 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
         new_y[0] = np.load(y_init_path)
         return new_y
 
-    def extract_features(features_path):
-        if not os.path.exists(features_path):
+    def extract_features(features_path,losses_path):
+        if not os.path.exists(features_path) or not os.path.exists(losses_path):
             net.eval()
             features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
+            losses = np.zeros(NUM_TRAINDATA)
+            c = nn.CrossEntropyLoss(reduction='none').to(DEVICE)
             for batch_idx, (images, labels) in enumerate(t_dataloader):
-                images, labels = images.to(device), labels.to(device)
+                images, labels = images.to(DEVICE), labels.to(DEVICE)
                 index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
                 output, feats = net(images,get_feat=True)
                 features[index] = feats.cpu().detach().numpy()
+                loss = c(output, labels)
+                losses[index] = loss.detach().cpu().numpy()
             net.train()
             if not os.path.exists(features_path):
                 np.save(features_path,features)
-        features = np.load(features_path)
-        return features
+            if not os.path.exists(losses_path):
+                np.save(losses_path,losses)
+        return np.load(features_path), np.load(losses_path)
 
-    print('use_clean:{}, mixup: {}'.format(meta_data_type, MIXUP))
+    print('use_clean:{}, mixup: {}'.format(METADATA_TYPE, MIXUP))
     print('alpha:{}, beta:{}, gamma:{}, k:{}, stage1:{}, stage2:{}'.format(alpha, beta, gamma, k, stage1, stage2))
 
     class MetaNet(nn.Module):
@@ -319,7 +324,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
             x = F.relu(self.bn2(self.linear2(x)))
             out = self.linear3(x)
             return softmax(out)
-    meta_net = MetaNet(NUM_FEATURES, NUM_CLASSES).to(device)
+    meta_net = MetaNet(NUM_FEATURES, NUM_CLASSES).to(DEVICE)
     optimizer_meta_net = torch.optim.Adam(meta_net.parameters(), beta, weight_decay=1e-4)
     meta_net.train()
 
@@ -333,92 +338,98 @@ def metapencil(alpha, beta, gamma, stage1, stage2, k):
 
     # paths for save and load
     path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
-    if dataset in DATASETS_SMALL:
-        path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
-    model_s1_path = '{}/model_s1_{}_{}.pt'.format(dataset,path_ext,meta_data_type=='validation')
-    y_init_path = '{}/yinit_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
-    features_path = '{}/features_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
+    if DATASET in DATASETS_SMALL:
+        path_ext = '{}_{}_{}'.format(path_ext,NOISE_TYPE,NOISE_RATIO)
+    model_s1_path = '{}/model_s1_{}_{}.pt'.format(DATASET,path_ext,METADATA_TYPE=='validation')
+    y_init_path = '{}/yinit_{}.npy'.format(DATASET,path_ext)
+    features_path = '{}/features_{}.npy'.format(DATASET,path_ext)
+    losses_path = '{}/losses_{}.npy'.format(DATASET,path_ext)
 
     # if not done beforehand, perform warmup-training
     warmup_training(model_s1_path)
 
     # if no use clean data, extract reliable data for meta subset
-    if meta_data_type  != 'validation':
+    if METADATA_TYPE  != 'validation':
         # extract features for all training data
-        features4meta = extract_features(features_path) 
+        features4meta, losses = extract_features(features_path,losses_path) 
         # aggragate label information
         labels4meta = init_labels(y_init_path)
         # contrcut the new training and meta data
-        t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta(features4meta, labels4meta[0],meta_data_type)
+        t_dataset, m_dataset, t_dataloader, m_dataloader = get_dataloaders_meta(features4meta, losses, labels4meta[0],k)
         NUM_TRAINDATA = len(t_dataset)
         # update paths since NUM_TRAINDATA is changed
         path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
-        if dataset in DATASETS_SMALL:
-            path_ext = '{}_{}_{}'.format(path_ext,noise_type,noise_ratio)
-        model_s1_path = '{}/model_s1_{}_{}.pt'.format(dataset,path_ext,meta_data_type=='validation')
-        y_init_path = '{}/yinit_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
-        features_path = '{}/features_{}_{}.npy'.format(dataset,path_ext,meta_data_type)
+        if DATASET in DATASETS_SMALL:
+            path_ext = '{}_{}_{}'.format(path_ext,NOISE_TYPE,NOISE_RATIO)
+        y_init_path = '{}/yinit_{}_{}_{}.npy'.format(DATASET,path_ext,METADATA_TYPE,k)
+        features_path = '{}/features_{}_{}_{}.npy'.format(DATASET,path_ext,METADATA_TYPE,k)
+        losses_path = '{}/losses_{}_{}_{}.npy'.format(DATASET,path_ext,METADATA_TYPE,k)
         # if not done beforehand, perform warmup-training
+        #model_s1_path = '{}/model_s1_{}_{}.pt'.format(DATASET,path_ext,METADATA_TYPE)
         #warmup_training(model_s1_path)
 
     # initialize predicted labels with given labels
     new_y = init_labels(y_init_path)
     # extract features for all training data
-    features = extract_features(features_path) 
+    features, _ = extract_features(features_path,losses_path) 
     # meta training
     meta_training()
 
-def get_dataloaders_meta(features4meta, labels4meta,meta_data_type):
+def get_dataloaders_meta(features4meta, losses, labels4meta, k):
+    assert NUM_METADATA != None, 'For no clean data use for meta-data, --metadata_num should be given'
     from scipy.spatial import distance
     NUM_TRAINDATA = len(train_dataset)
     num_meta_data_per_class = int(NUM_METADATA/NUM_CLASSES)
     labels = np.argmax(labels4meta, axis=1)
     idx_meta = None
     
-    if meta_data_type == 'mahalanobis' or meta_data_type == 'euclidean':
+    if METADATA_TYPE == 'mahalanobis' or METADATA_TYPE == 'euclidean':
+        from sklearn.cluster import KMeans
+        #kmeans = KMeans(n_clusters=NUM_CLASSES, random_state=RANDOM_SEED).fit(features4meta)
+        #labels = kmeans.predict(features4meta)
         # get idx of samples for each classes
         for i in range(NUM_CLASSES):
             idx_i = labels == i
             idx_i = np.where(idx_i == True)[0]
+            num_i = len(idx_i)
+            num_i_consider = int(num_i*k)
+            if VERBOSE > 0:
+                print('{} samples are considered for class {}'.format(num_i_consider, i))
 
-            centroid_i = np.mean(features4meta[idx_i], axis = 0)
-            cov_i = np.cov(features4meta[idx_i].transpose())
-            invcov_i = np.linalg.inv(cov_i)
+            centroid_i = np.mean(features4meta[idx_i], axis = 0)#kmeans.cluster_centers_[i]
             distances_i = np.zeros(len(idx_i))
-            for j in range(len(idx_i)):
-                if meta_data_type == 'mahalanobis':
+            if METADATA_TYPE == 'mahalanobis':
+                cov_i = np.cov(features4meta[idx_i].transpose())
+                invcov_i = np.linalg.inv(cov_i)
+                for j in range(len(idx_i)):
                     distances_i[j] = distance.mahalanobis(features4meta[idx_i[j]], centroid_i, invcov_i)
-                elif meta_data_type == 'euclidean':
+            elif METADATA_TYPE == 'euclidean':
+                for j in range(len(idx_i)):
                     distances_i[j] = distance.euclidean(features4meta[idx_i[j]], centroid_i)
             sorted_idx_i = np.argsort(distances_i)
-            anchor_idx_i = np.take(idx_i, sorted_idx_i[:num_meta_data_per_class])
+
+            considered_idx = sorted_idx_i[:num_i_consider]
+            considered_idx = np.take(idx_i, considered_idx)
+            anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
             if idx_meta is None:
                 idx_meta = anchor_idx_i
             else:
                 idx_meta = np.concatenate((idx_meta,anchor_idx_i))
-    elif meta_data_type == 'loss':
-        loss_values = np.zeros(NUM_TRAINDATA)
-        label_values = np.zeros(NUM_TRAINDATA)
-        
-        c = nn.CrossEntropyLoss(reduction='none').to(device)
-        for batch_idx, (images, labels) in enumerate(train_dataloader):
-            images, labels = images.to(device), labels.to(device)
-            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-            output = net(images)
-            loss = c(output, labels)
-            loss_values[index] = loss.detach().cpu().numpy()
-            label_values[index] = labels.cpu().numpy()
+    elif METADATA_TYPE == 'loss':
         for i in range(NUM_CLASSES):
-            idx_i = label_values == i
-            idx_i = np.where(idx_i == True)
-            loss_values_i = loss_values[idx_i]
+            idx_i = labels == i
+            idx_i = np.where(idx_i == True)[0]
+            num_i = len(idx_i)
+            num_i_consider = int(num_i*k)
+            if VERBOSE > 0:
+                print('{} samples are considered for class {}'.format(num_i_consider, i))
+
+            loss_values_i = losses[idx_i]
             sorted_idx = np.argsort(loss_values_i)
-            #inv_arr = np.exp(-1*loss_values_i)
-            #prob_arr = np.array(np.exp(inv_arr)/np.sum(np.exp(inv_arr)))#
-            #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=np.array(prob_arr/np.sum(prob_arr)))
-            #anchor_idx_i = np.random.choice(idx_i[0], num_meta_data_per_class, p=prob_arr)
-            selected_idx = np.random.choice(sorted_idx[:3*num_meta_data_per_class], num_meta_data_per_class, replace=False)  
-            anchor_idx_i = np.take(idx_i, selected_idx)
+
+            considered_idx = sorted_idx_i[:num_i_consider]
+            considered_idx = np.take(idx_i, considered_idx)
+            anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
             if idx_meta is None:
                 idx_meta = anchor_idx_i
             else:
@@ -468,7 +479,7 @@ def image_grid(idx, train_dataset, grads):
         plt.yticks([])
         plt.grid(False)
 
-        if dataset == 'mnist_fashion':
+        if DATASET == 'mnist_fashion':
             plt.imshow(np.squeeze(img), cmap=plt.cm.binary)
         else:
             img = np.moveaxis(img.numpy(),0,-1)
@@ -487,7 +498,7 @@ def evaluate(net, dataloader, criterion):
         net.eval()
         with torch.no_grad():
             for (inputs, targets) in dataloader:
-                inputs, targets = inputs.to(device), targets.to(device)
+                inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = net(inputs) 
                 loss = criterion(outputs, targets) 
                 _, predicted = torch.max(outputs.data, 1) 
@@ -503,7 +514,7 @@ def plot_confusion_matrix(net, dataloader):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+targets.size(0))
-            inputs, targets = inputs.to(device), targets.to(device)
+            inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
             outputs = net(inputs) 
             _, predicted = torch.max(outputs.data, 1) 
 
@@ -587,21 +598,21 @@ if __name__ == "__main__":
     if args.stage2 == None: args.stage2 = PARAMS_META[args.dataset]['stage2']
     if args.k == None: args.k = PARAMS_META[args.dataset]['k']
     # configuration variables
-    framework = 'pytorch'
-    dataset = args.dataset
-    model_name = 'MLNC'
-    noise_type = args.noise_type
-    noise_ratio = args.noise_ratio/100
-    BATCH_SIZE = args.batch_size if args.batch_size != None else PARAMS[dataset]['batch_size']
-    NUM_CLASSES = PARAMS[dataset]['num_classes']
-    NUM_FEATURES = PARAMS[dataset]['num_features']
+    FRAMEWORK = 'pytorch'
+    DATASET = args.dataset
+    MODEL_NAME = 'MLNC'
+    NOISE_TYPE = args.noise_type
+    NOISE_RATIO = args.noise_ratio/100
+    BATCH_SIZE = args.batch_size if args.batch_size != None else PARAMS[DATASET]['batch_size']
+    NUM_CLASSES = PARAMS[DATASET]['num_classes']
+    NUM_FEATURES = PARAMS[DATASET]['num_features']
     NUM_META_EPOCHS = args.stage2 - args.stage1
     SAVE_LOGS = args.save_logs
     RANDOM_SEED = args.seed
     MIXUP = args.mixup
-    meta_data_type = args.clean_data_type
-    verbose = args.verbose
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    METADATA_TYPE = args.clean_data_type
+    VERBOSE = args.verbose
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:
         gpu_ids = 0
         ngpu = 1
@@ -609,7 +620,7 @@ if __name__ == "__main__":
         gpu_ids = args.gpu_ids[0]
         ngpu = len(gpu_ids)
         if ngpu == 1: 
-            device = torch.device("cuda:{}".format(gpu_ids[0]))
+            DEVICE = torch.device("cuda:{}".format(gpu_ids[0]))
         
     if args.num_workers is None:
         num_workers = 2 if ngpu < 2 else ngpu*2
@@ -619,39 +630,39 @@ if __name__ == "__main__":
     np.random.seed(RANDOM_SEED)
     torch.backends.cudnn.benchmark = True
     # create necessary folders
-    create_folder('{}/dataset'.format(dataset))
+    create_folder('{}/dataset'.format(DATASET))
     # global variables
-    if meta_data_type != 'validation':
-        train_dataset, val_dataset, test_dataset, meta_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,RANDOM_SEED,0,0)
-        noisy_idx, clean_labels = get_synthetic_idx(dataset,RANDOM_SEED,0,0,noise_type,noise_ratio)
+    if METADATA_TYPE != 'validation':
+        train_dataset, meta_dataset, test_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED)
+        noisy_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,None,NOISE_TYPE,NOISE_RATIO)
         meta_dataloader = None
     else:
-        train_dataset, val_dataset, test_dataset, meta_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,RANDOM_SEED,args.metadata_num,0)
-        noisy_idx, clean_labels = get_synthetic_idx(dataset,RANDOM_SEED,args.metadata_num,0,noise_type,noise_ratio)
+        train_dataset, meta_dataset, test_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,args.metadata_num)
+        noisy_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,NOISE_TYPE,NOISE_RATIO)
         meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
     
     NUM_METADATA = args.metadata_num
-    net = get_model(dataset,framework).to(device)
-    if (device.type == 'cuda') and (ngpu > 1):
+    net = get_model(DATASET,FRAMEWORK).to(DEVICE)
+    if (DEVICE.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
-    lr_scheduler = get_lr_scheduler(dataset)
+    lr_scheduler = get_lr_scheduler(DATASET)
     optimizer = optim.SGD(net.parameters(), lr=lr_scheduler(0), momentum=0.9, weight_decay=1e-4)
-    logsoftmax = nn.LogSoftmax(dim=1).to(device)
-    softmax = nn.Softmax(dim=1).to(device)
+    logsoftmax = nn.LogSoftmax(dim=1).to(DEVICE)
+    softmax = nn.Softmax(dim=1).to(DEVICE)
   
-    print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}".format(dataset, model_name, device, BATCH_SIZE, ngpu))
-    if dataset in DATASETS_SMALL:
-        print("Noise type: {}, Noise ratio: {}".format(noise_type, noise_ratio))
+    print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}".format(DATASET, MODEL_NAME, DEVICE, BATCH_SIZE, ngpu))
+    if DATASET in DATASETS_SMALL:
+        print("Noise type: {}, Noise ratio: {}".format(NOISE_TYPE, NOISE_RATIO))
 
     # if logging
     if SAVE_LOGS == 1:
-        base_folder = model_name if dataset in DATASETS_BIG else noise_type + '/' + str(args.noise_ratio) + '/' + model_name
-        log_folder = args.folder_log if args.folder_log else 'c{}_a{}_b{}_g{}_s{}_m{}_{}'.format(meta_data_type, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
-        log_base = '{}/logs/{}/'.format(dataset, base_folder)
+        base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.NOISE_RATIO) + '/' + MODEL_NAME
+        log_folder = args.folder_log if args.folder_log else 'c{}_a{}_b{}_g{}_s{}_m{}_{}'.format(METADATA_TYPE, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
+        log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
-        log_dir_hp = '{}/logs_hp/{}/'.format(dataset, base_folder)
+        log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
         create_folder(log_dir)
         summary_writer = SummaryWriter(log_dir)
         create_folder(log_dir_hp)
