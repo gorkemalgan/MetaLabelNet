@@ -110,7 +110,7 @@ def download_data(dataset_name):
                 shutil.unpack_archive('clothing1M/dataset/images/{}.tar'.format(i),'clothing1M/dataset/images')
                 os.remove('clothing1M/dataset/images/{}.tar'.format(i))
 
-def add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes):
+def add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes, verbose=1):
     from numpy.testing import assert_array_almost_equal
     
     def noise_featuredependent(y_train_int, probs, noise_ratio):
@@ -246,7 +246,8 @@ def add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes):
             P[9,1] = noise_ratio
 
             y_train_noisy = noise_cm(y_train, P)
-        print('Synthetic noise ratio is {}'.format(np.sum(y_train_noisy!=y_train)/y_train.shape[0]))
+        if verbose > 0:
+            print('Synthetic noise ratio is {}'.format(np.sum(y_train_noisy!=y_train)/y_train.shape[0]))
         return y_train_noisy
     else:
         return y_train
@@ -322,12 +323,12 @@ def get_cm(dataset_name, noise_type, noise_ratio, framework=None):
 
 def get_synthetic_idx(dataset_name,seed,num_validation,noise_type,noise_ratio):
     if dataset_name in DATASETS_SMALL:
-        _, y_clean, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, 0)
-        _, y_noisy, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, noise_ratio)
+        _, y_clean, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, 0,0)
+        _, y_noisy, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, noise_ratio,0)
         return y_clean != y_noisy, y_clean
     return None,None
 
-def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature-dependent', noise_ratio=0):
+def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature-dependent', noise_ratio=0, verbose=1):
     assert dataset_name in DATASETS_SMALL, 'invalid dataset name!'
     import gzip
     import pickle
@@ -487,7 +488,7 @@ def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature
                         'worm'] 
 
     # add synthetic noise
-    y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes)
+    y_train = add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes,verbose)
     # they are 2D originally in cifar
     y_train = y_train.ravel()
     y_test = y_test.ravel()
@@ -660,7 +661,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
 
         return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, class_names 
 
-def get_bigdata_tf(dataset_name,random_seed):
+def get_bigdata_tf(dataset_name,random_seed,num_validation):
     import tensorflow as tf
     import pathlib
 
@@ -686,7 +687,7 @@ def get_bigdata_tf(dataset_name,random_seed):
         label.set_shape([])
         return img, label
 
-    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, meta_imgs, meta_labels, class_names = get_bigdata_lists(dataset_name,random_seed)
+    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, meta_imgs, meta_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
 
     train_ds = tf.data.Dataset.from_tensor_slices(train_imgs).map(lambda x: tf.numpy_function(func=get_procfunc(train_labels), inp=[x], Tout=[tf.float32, tf.int32]))
     test_ds = tf.data.Dataset.from_tensor_slices(test_imgs).map(lambda x: tf.numpy_function(func=get_procfunc(test_labels), inp=[x], Tout=[tf.float32, tf.int32]))
@@ -767,23 +768,20 @@ def get_smalldata_transform_func(framework, dataset_name):
         else:
             return transformfunc
 
-def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_validation=None):
+def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_validation=None,verbose=1):
     assert dataset_name in DATASETS, 'invalid dataset name!'
 
     framework = get_framework(framework)
     download_data(dataset_name)
 
     if dataset_name in DATASETS_SMALL:
-        x_train, y_train, x_val, y_val, x_test, y_test, class_names = get_smalldata(dataset_name,random_seed,num_validation,noise_type,noise_ratio)
+        x_train, y_train, x_val, y_val, x_test, y_test, class_names = get_smalldata(dataset_name,random_seed,num_validation,noise_type,noise_ratio,verbose)
         transorm_func = get_smalldata_transform_func(framework, dataset_name)
         if framework == 'tensorflow':
             import tensorflow as tf
             train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).map(transorm_func)
             test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
-            if not (x_val is None):
-                val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
-            if not (x_meta is None):
-                meta_dataset = tf.data.Dataset.from_tensor_slices((x_meta, y_meta))
+            val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
         elif framework == 'pytorch':
             train_dataset = CustomTensorDataset(x_train, y_train, transform=transorm_func)
             test_dataset = CustomTensorDataset(x_test, y_test, transform=None)
@@ -791,7 +789,7 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
         return train_dataset, val_dataset, test_dataset, class_names
     else:
         if framework == 'tensorflow':
-            return get_bigdata_tf(dataset_name,random_seed)
+            return get_bigdata_tf(dataset_name,random_seed,num_validation)
         elif framework == 'pytorch':
             return get_bigdata_torch(dataset_name,random_seed,num_validation)
 
