@@ -1,4 +1,4 @@
-import os
+import os, shutil
 import datetime
 
 current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -65,6 +65,13 @@ def get_meta_lr_scheduler(lr_type, stage1, stage2, lambda1, lambda2):
             else:
                 return lambda2
         return lr_scheduler
+
+def clean_emptylogs(log_base):
+    for folder in os.listdir(log_base):
+        path = '{}{}'.format(log_base,folder)
+        if not os.path.exists('{}/saved_model.pt'.format(path)):
+            print('deleting {}'.format(path))
+            shutil.rmtree(path)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

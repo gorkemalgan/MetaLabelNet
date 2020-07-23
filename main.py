@@ -190,11 +190,12 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
 
                 # compute output
-                output, _feats = net(images,get_feat=True)
+                output, _ = net(images,get_feat=True)
                 _, predicted = torch.max(output.data, 1)
 
                 # predict labels
-                feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
+                _, feats = feature_encoder(images,get_feat=True)
+                #feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
                 yy = meta_net(feats)
                 _, labels_yy[index] = torch.max(yy.cpu(), 1)
                 # meta training images and labels
@@ -265,8 +266,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                                     label_similarity.percentage, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}, Hyper-params(alpha,beta,gamma,k,c): {:3.2f}/{:5.4f}/{:3.2f}/{:3.2f}/{}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, alpha, beta, gamma, k, clean_data_type))
+        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {},Hyper-params(alpha,beta,gamma,c,k,p): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
@@ -290,18 +291,16 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
 
     def extract_features(features_path,losses_path):
         if not os.path.exists(features_path) or not os.path.exists(losses_path):
-            net.eval()
             features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
             losses = np.zeros(NUM_TRAINDATA)
             c = nn.CrossEntropyLoss(reduction='none').to(DEVICE)
             for batch_idx, (images, labels) in enumerate(t_dataloader):
                 images, labels = images.to(DEVICE), labels.to(DEVICE)
                 index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-                output, feats = net(images,get_feat=True)
+                output, feats = feature_encoder(images,get_feat=True)
                 features[index] = feats.cpu().detach().numpy()
                 loss = c(output, labels)
                 losses[index] = loss.detach().cpu().numpy()
-            net.train()
             if not os.path.exists(features_path):
                 np.save(features_path,features)
             if not os.path.exists(losses_path):
@@ -370,7 +369,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 idx_i = labels == i
                 idx_i = np.where(idx_i == True)[0]
                 num_i = len(idx_i)
-                num_i_consider = int(num_i*k)
+                num_i_consider = int(num_i*percentage_consider)
                 if VERBOSE > 0:
                     print('{} samples are considered for class {}'.format(num_i_consider, i))
 
@@ -441,6 +440,9 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
 
     # if not done beforehand, perform warmup-training
     warmup_training(model_s1_path)
+    # set feature encoder as model trained after warm-up
+    feature_encoder.load_state_dict(torch.load(model_s1_path, map_location=DEVICE))  
+    feature_encoder.eval()
 
     # if no use clean data, extract reliable data for meta subset
     if clean_data_type  != 'validation':
@@ -458,11 +460,13 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
         y_init_path = '{}/yinit_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider)
         features_path = '{}/features_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider)
         losses_path = '{}/losses_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider)
+        del features4meta
+        gc.collect
 
     # initialize predicted labels with given labels
     new_y = init_labels(y_init_path)
     # extract features for all training data
-    features, _ = extract_features(features_path,losses_path) 
+    #features, _ = extract_features(features_path,losses_path) 
     # meta training
     meta_training()
 
@@ -611,7 +615,6 @@ if __name__ == "__main__":
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
 
-
     args = parser.parse_args()
     #set default variables if they are not given from the command line
     if args.alpha == None: args.alpha = PARAMS_META[args.dataset]['alpha']
@@ -666,6 +669,7 @@ if __name__ == "__main__":
     
     NUM_METADATA = args.metadata_num
     net = get_model(DATASET,FRAMEWORK).to(DEVICE)
+    feature_encoder = get_model(DATASET,FRAMEWORK).to(DEVICE)
     if (DEVICE.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
     lr_scheduler = get_lr_scheduler(DATASET)
@@ -688,6 +692,7 @@ if __name__ == "__main__":
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
         log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
+        #clean_emptylogs()
         create_folder(log_dir)
         summary_writer = SummaryWriter(log_dir)
         create_folder(log_dir_hp)
