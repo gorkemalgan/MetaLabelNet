@@ -325,7 +325,7 @@ def get_synthetic_idx(dataset_name,seed,num_validation,noise_type,noise_ratio):
     if dataset_name in DATASETS_SMALL:
         _, y_clean, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, 0,0)
         _, y_noisy, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, noise_ratio,0)
-        return y_clean != y_noisy, y_clean
+        return np.where(y_clean != y_noisy)[0], np.where(y_clean == y_noisy)[0] , y_clean
     return None,None
 
 def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature-dependent', noise_ratio=0, verbose=1):
