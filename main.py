@@ -319,7 +319,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
         from sklearn.decomposition import PCA
         NUM_TRAINDATA = len(train_dataset)
         num_meta_data_per_class = int(NUM_METADATA/NUM_CLASSES)
-        labels = np.argmax(labels4meta[0], axis=1)
+        labels = np.argmax(outs, axis=1)
         idx_meta = None
         
         if clean_data_type == 'mahalanobis' or clean_data_type == 'euclidean':
@@ -421,12 +421,34 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 num_i = len(idx_i)
                 num_i_consider = int(num_i*percentage_consider)
 
-                loss_values_i = losses[idx_i]
-                sorted_idx_i = np.argsort(loss_values_i)
+                #loss_values_i = losses[idx_i]
+                #sorted_idx_i = np.argsort(loss_values_i)
+                #considered_idx = sorted_idx_i[:num_i_consider]
+                #idx_i = np.take(idx_i, considered_idx)
 
-                considered_idx = sorted_idx_i[:num_i_consider]
-                considered_idx = np.take(idx_i, considered_idx)
-                anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
+                loss_values_i = losses[idx_i]
+                loss_sorted_idx_i = np.argsort(loss_values_i)
+                loss_sorted_idx_i = np.take(idx_i, loss_sorted_idx_i)
+
+                out_values_i = outs[idx_i,i]
+                out_sorted_idx_i = np.argsort(out_values_i)
+                out_sorted_idx_i = np.take(idx_i, out_sorted_idx_i)
+
+                anchor_idx_i = np.intersect1d(np.flip(loss_sorted_idx_i), out_sorted_idx_i[-1*num_i_consider:])
+                anchor_idx_i = anchor_idx_i[:num_meta_data_per_class]
+
+                #intersect_length=0
+                #considered_len = 0
+                #while intersect_length < num_meta_data_per_class:
+                #    considered_len = considered_len + 1
+                #    anchor_idx_i = np.intersect1d(loss_sorted_idx_i[-1*considered_len:], out_sorted_idx_i[-1*considered_len:])
+                #    intersect_length = len(anchor_idx_i)
+                #print(considered_len)
+
+
+                #considered_idx = sorted_idx_i[:num_i_consider]
+                #considered_idx = np.take(idx_i, considered_idx)
+                #anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
                 if idx_meta is None:
                     idx_meta = anchor_idx_i
                 else:
