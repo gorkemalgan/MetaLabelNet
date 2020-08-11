@@ -28,7 +28,8 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage
                'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
-               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10}}
+               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':0, 'stage2':10}}
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -651,7 +652,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='WebVision',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-n', '--noise_type', required=False, type=str, default='feature-dependent',
         help="Noise type for cifar10: 'feature-dependent', 'symmetric'")
@@ -676,7 +677,7 @@ if __name__ == "__main__":
     
     parser.add_argument('-c', '--clean_data_type', required=False, type=str, default='validation',
         help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
-    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
+    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=1000,
         help="Number of samples to be used as meta-data")
     parser.add_argument('-k', '--kmeans_clusternum', required=False, type=int, default=10,
         help="Number of kmeans clusters")

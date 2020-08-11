@@ -23,7 +23,7 @@ def get_model(dataset, framework='pytorch'):
     elif dataset == 'food101N':
         return resnet50(framework, num_classes = 101, input_shape=(224,224,3))
     elif dataset == 'WebVision':
-        return resnet50(framework, num_classes = 50, input_shape=(224,224,3))
+        return InceptionResNetV2(framework, num_classes = 50)
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced':
         return resnet50(framework, num_classes = 14, input_shape=(224,224,3))
 
@@ -126,6 +126,14 @@ def resnet50(framework, num_classes, input_shape):
         model = tf.keras.applications.resnet.ResNet50(include_top=False, weights='imagenet', input_shape=(224, 224, 3), pooling='avg')
         output = tf.keras.layers.Dense(num_classes)(model.layers[-1].output)
         return tf.keras.models.Model(model.input, outputs=output)
+
+def InceptionResNetV2(framework, num_classes):
+    import os
+    if framework == 'pytorch':
+        from InceptionResNetV2 import InceptionResNetV2
+        return InceptionResNetV2(num_classes)
+    elif framework == 'tensorflow':
+        return None
 
 def model_cifar10(framework):
     num_classes = 10
@@ -284,4 +292,8 @@ def model_cifar10(framework):
         return Model(img_input, x)
 
 if __name__ == '__main__':
-    get_model('clothing1M')
+    from collections import OrderedDict
+    net = get_model('WebVision')
+    fast_weights = OrderedDict((name, param) for (name, param) in net.named_parameters())  
+    print(fast_weights)
+    fast_out = net.forward(images_meta,fast_weights)
