@@ -19,11 +19,13 @@ def get_model(dataset, framework='pytorch'):
     elif dataset == 'cifar10':
         return model_cifar10(framework)
     elif dataset == 'cifar100':
-        return resnet34(framework, num_classes = 100, input_shape=(32,32,3), dataset=dataset)
+        return resnet34(framework, num_classes = 100, input_shape=(32,32,3))
     elif dataset == 'food101N':
-        return resnet50(framework, num_classes = 101, input_shape=(224,224,3), dataset=dataset)
+        return resnet50(framework, num_classes = 101, input_shape=(224,224,3))
+    elif dataset == 'WebVision':
+        return resnet50(framework, num_classes = 50, input_shape=(224,224,3))
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced':
-        return resnet50(framework, num_classes = 14, input_shape=(224,224,3), dataset=dataset)
+        return resnet50(framework, num_classes = 14, input_shape=(224,224,3))
 
 def model_mnistfashion(framework):
     if framework == 'pytorch':
@@ -89,7 +91,7 @@ def model_mnistfashion(framework):
         # Create model
         return Model(img_input, x) 
 
-def resnet34(framework, num_classes, input_shape, dataset):
+def resnet34(framework, num_classes, input_shape):
     import os
     if framework == 'pytorch':
         import torch
@@ -105,7 +107,7 @@ def resnet34(framework, num_classes, input_shape, dataset):
     elif framework == 'tensorflow':
         return None
 
-def resnet50(framework, num_classes, input_shape, dataset):
+def resnet50(framework, num_classes, input_shape):
     import os
     if framework == 'pytorch':
         import torch

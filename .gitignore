@@ -17,7 +17,9 @@ cifar100/models/
 food101N/dataset/
 food101N/logs/
 food101N/logs_hp/
-food101N/models/
+WebVision/dataset/
+WebVision/logs/
+WebVision/logs_hp/
 clothing1M/dataset/
 clothing1M/logs/
 clothing1M/logs_hp/

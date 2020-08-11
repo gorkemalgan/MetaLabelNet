@@ -1,5 +1,5 @@
 DATASETS_SMALL = ['mnist_fashion','cifar10','cifar100']
-DATASETS_BIG = ['food101N', 'clothing1M', 'clothing1M50k', 'clothing1Mbalanced']
+DATASETS_BIG = ['food101N', 'clothing1M', 'clothing1M50k', 'clothing1Mbalanced', 'WebVision']
 DATASETS = DATASETS_SMALL + DATASETS_BIG
 
 IMG_RESIZED = 256
@@ -326,7 +326,7 @@ def get_synthetic_idx(dataset_name,seed,num_validation,noise_type,noise_ratio):
         _, y_clean, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, 0,0)
         _, y_noisy, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, noise_ratio,0)
         return np.where(y_clean != y_noisy)[0], np.where(y_clean == y_noisy)[0] , y_clean
-    return None,None
+    return None,None,None
 
 def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature-dependent', noise_ratio=0, verbose=1):
     assert dataset_name in DATASETS_SMALL, 'invalid dataset name!'
@@ -510,6 +510,14 @@ def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature
 
 def get_bigdata_lists(dataset_name,random_seed,num_validation):
     from sklearn.model_selection import train_test_split
+
+    train_imgs = []
+    train_labels = {}
+    val_imgs = []
+    val_labels = {}
+    test_imgs = []
+    test_labels = {}
+
     if dataset_name == 'food101N':
         def get_label(file_path):
             path = os.path.normpath(file_path)
@@ -541,18 +549,12 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             img_path = data_dir+'images/'+entry[0]
             verified_val_paths[img_path] = int(entry[1])
 
-        train_imgs = []
-        train_labels = {}
-        val_imgs = []
-        val_labels = {}
-        test_imgs = []
-        test_labels = {}
-
         val_imgs_tmp = []
         val_labels_tmp = []
         for key in verified_train_paths:
-            val_imgs_tmp.append(key)
-            val_labels_tmp.append(get_label(key))
+            if verified_train_paths[key] == 1:
+                val_imgs_tmp.append(key)
+                val_labels_tmp.append(get_label(key))
         if num_validation == None:
             _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs_tmp, val_labels_tmp, test_size=10000, random_state=random_seed)
         else:
@@ -576,16 +578,12 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             test_labels[key] = get_label(key)
 
         random.Random(random_seed).shuffle(train_imgs)
+        random.Random(random_seed).shuffle(val_imgs)
         return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names
     elif dataset_name == 'clothing1M' or dataset_name == 'clothing1M50k' or dataset_name == 'clothing1Mbalanced':
         data_dir = 'clothing1M/dataset/'
         class_names = ['T-Shirt','Shirt','Knitwear','Chiffon','Sweater','Hoodie','Windbreaker','Jacket','Downcoat','Suit','Shawl','Dress','Vest','Underwear']
         num_classes = len(class_names)
-        train_imgs = []
-        test_imgs = []
-        val_imgs = []
-        train_labels = {}
-        test_labels = {}
         with open(data_dir+'noisy_train_key_list.txt','r') as f:
             lines = f.read().splitlines()
         for l in lines:
@@ -627,7 +625,6 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             # correct train images labels with true labels if given
             if dataset_name == 'clothing1M50k':
                 train_labels[img_path] = int(entry[1])
-        random.Random(random_seed).shuffle(train_imgs)
 
         if dataset_name == 'clothing1Mbalanced':
             from collections import Counter
@@ -649,8 +646,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                     class_counts[label] += 1
             train_imgs = train_imgs2
             train_labels = train_labels2
-            random.Random(random_seed).shuffle(train_imgs)
-
+            
         if num_validation != None:
             val_imgs_tmp = []
             val_labels_tmp = []
@@ -659,7 +655,43 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                 val_labels_tmp.append(test_labels[key])
             _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs_tmp, val_labels_tmp, test_size=num_validation, random_state=random_seed)
 
-        return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, class_names 
+        random.Random(random_seed).shuffle(train_imgs)
+        random.Random(random_seed).shuffle(val_imgs)
+        return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, class_names
+    if dataset_name == 'WebVision': 
+        data_dir = 'WebVision/dataset/'
+        num_classes = 50
+        class_names = np.arange(num_classes)
+
+        with open(data_dir+'info/train_filelist_google.txt') as f:
+            lines=f.readlines()    
+        for line in lines:
+            img, target = line.split()
+            target = int(target)
+            if target < num_classes:
+                img_path = data_dir+img
+                train_imgs.append(img_path)
+                train_labels[img_path]=target  
+
+        val_labels_tmp = []
+        with open(data_dir+'info/val_filelist.txt') as f:
+            lines=f.readlines()
+        for line in lines:
+            img, target = line.split()
+            target = int(target)
+            if target < num_classes:
+                img_path = data_dir+'val_images_256/'+img
+                val_imgs.append(img_path)
+                val_labels[img_path]=target  
+                val_labels_tmp.append(target)
+
+        if num_validation != None:
+            test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=num_validation, random_state=random_seed) 
+        else:
+            test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=1000, random_state=random_seed) 
+        random.Random(random_seed).shuffle(train_imgs)
+        random.Random(random_seed).shuffle(val_imgs)
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names
 
 def get_bigdata_tf(dataset_name,random_seed,num_validation):
     import tensorflow as tf
@@ -808,10 +840,7 @@ def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature
     return train_dataloader, val_dataloader, test_dataloader, class_names
 
 if __name__ == "__main__":
-    train_dataset, val_dataset, test_dataset, meta_dataset, class_names = get_data('food101N',num_metadata=5000,num_validation=0, noise_type='class-dependent', noise_ratio=30, )
+    train_dataset, val_dataset, test_dataset, class_names = get_data('WebVision',num_validation=1000)
     print('train', len(train_dataset))
+    print('val', len(val_dataset))
     print('test', len(test_dataset))
-    if not (val_dataset is None):
-        print('val', len(val_dataset))
-    if not (meta_dataset is None):
-        print('meta', len(meta_dataset))
