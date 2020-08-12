@@ -109,6 +109,14 @@ def download_data(dataset_name):
             for i in range(10):
                 shutil.unpack_archive('clothing1M/dataset/images/{}.tar'.format(i),'clothing1M/dataset/images')
                 os.remove('clothing1M/dataset/images/{}.tar'.format(i))
+    elif dataset_name == 'WebVision':
+        if not os.path.isdir('WebVision/dataset/README.txt'):
+            resources = ['google_{}.tar'.format(str(i).zfill(2)) for i in range(17)]
+            resources = resources + ['val_images.tar', 'README.txt', 'info.tar']
+            download('WebVision/dataset/', 'https://data.vision.ee.ethz.ch/cvl/webvision/', resources)
+            for r in resources:
+                shutil.unpack_archive('WebVision/dataset/{}'.format(r),'WebVision/dataset/')
+                os.remove('WebVision/dataset/{}'.format(r))
 
 def add_noise(dataset_name, y_train, noise_type, noise_ratio, num_classes, verbose=1):
     from numpy.testing import assert_array_almost_equal
