@@ -815,7 +815,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='WebVision',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-m', '--model_name', required=False, type=str, default='cross_entropy',
         help="""Model name: 'cross_entropy', 

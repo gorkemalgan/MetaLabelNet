@@ -110,7 +110,7 @@ def download_data(dataset_name):
                 shutil.unpack_archive('clothing1M/dataset/images/{}.tar'.format(i),'clothing1M/dataset/images')
                 os.remove('clothing1M/dataset/images/{}.tar'.format(i))
     elif dataset_name == 'WebVision':
-        if not os.path.isdir('WebVision/dataset/README.txt'):
+        if not os.path.exists('WebVision/dataset/README.txt'):
             resources = ['google_{}.tar'.format(str(i).zfill(2)) for i in range(17)]
             resources = resources + ['val_images.tar', 'README.txt', 'info.tar']
             download('WebVision/dataset/', 'https://data.vision.ee.ethz.ch/cvl/webvision/', resources)
@@ -678,7 +678,6 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             target = int(target)
             if target < num_classes:
                 img_path = data_dir+img
-                img_path = img_path.replace('google', 'google_resized_256/google')
                 train_imgs.append(img_path)
                 train_labels[img_path]=target  
 
@@ -700,7 +699,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=1000, random_state=random_seed) 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, val_labels, class_names
 
 def get_bigdata_tf(dataset_name,random_seed,num_validation):
     import tensorflow as tf
@@ -751,8 +750,8 @@ def get_bigdata_torch(dataset_name,random_seed,num_validation):
     import torchvision.transforms as transforms      
     train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
     transform = transforms.Compose([
-            transforms.Resize(IMG_RESIZED[dataset_name]),
-            transforms.CenterCrop(IMG_CROPPED[dataset_name]),
+            transforms.Resize((IMG_RESIZED[dataset_name],IMG_RESIZED[dataset_name])),
+            transforms.CenterCrop((IMG_CROPPED[dataset_name],IMG_CROPPED[dataset_name])),
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
         ]) 

@@ -22,14 +22,14 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':20},
-               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':44,'stage2':120},
-               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':44,'stage2':120},
-               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
-               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
-               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
-               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':1, 'stage1':0, 'stage2':10}}
+PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':20},
+               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':44,'stage2':120},
+               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':44,'stage2':120},
+               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
+               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
+               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
+               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':100}}
 
 def mixup_data(x, y, alpha=1.0, use_cuda=True):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -47,7 +47,7 @@ def mixup_data(x, y, alpha=1.0, use_cuda=True):
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
-def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
+def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
     def warmup_training(model_s1_path):
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
@@ -86,8 +86,8 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                     sys.stdout.flush()  
                     
                 # evaluate on validation and test data
-                val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
-                test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
+                val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
+                test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion_cce)
 
                 if SAVE_LOGS == 1:
                     summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
@@ -95,27 +95,29 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                     summary_writer.add_scalar('test_accuracy', test_accuracy, epoch)
                     summary_writer.add_scalar('val_loss', val_loss, epoch)
                     summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
+                    summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
                     summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
 
                 if VERBOSE > 0:
-                    template = 'Epoch {}, Accuracy(train,val,test): {:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f},Learning rate: {}, Time: {:3.1f}({:3.2f})'
+                    template = 'Epoch {}, Accuracy(train,top5,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f},Learning rate: {}, Time: {:3.1f}({:3.2f})'
                     print(template.format(epoch + 1, 
-                                        train_accuracy.percentage, val_accuracy, test_accuracy,
+                                        train_accuracy.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                         train_loss.avg, val_loss, test_loss,  
                                         lr, time.time()-start_epoch, (time.time()-start_epoch)/3600))   
             torch.save(net.cpu().state_dict(), model_s1_path)
             net.to(DEVICE) 
         else:
             net.load_state_dict(torch.load(model_s1_path, map_location=DEVICE))  
-            val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
-            test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
+            val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
+            test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion_cce)
             if VERBOSE > 0:
-                print('Pretrained model, Accuracy(val,test): {:3.1f}/{:3.1f}, Loss(val,test): {:4.3f}/{:4.3f}'.format(val_accuracy, test_accuracy,val_loss, test_loss))
+                print('Pretrained model, Accuracy(topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}, Loss(val,test): {:4.3f}/{:4.3f}'.format(topk_accuracy, val_accuracy, test_accuracy,val_loss, test_loss))
             if SAVE_LOGS == 1:
                 summary_writer.add_scalar('test_loss', test_loss, stage1-1)
                 summary_writer.add_scalar('test_accuracy', test_accuracy, stage1-1)
                 summary_writer.add_scalar('val_loss', val_loss, stage1-1)
                 summary_writer.add_scalar('val_accuracy', val_accuracy, stage1-1)
+                summary_writer.add_scalar('topk_accuracy', topk_accuracy, stage1-1)
 
     def meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats):
         if MIXUP == 1:
@@ -168,6 +170,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
         test_acc_best = 0
         val_acc_best = 0
         epoch_best = 0
+        topk_acc_best = 0
         for epoch in range(stage1,stage2): 
             start_epoch = time.time()
             train_accuracy = AverageMeter()
@@ -235,12 +238,13 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
             if SAVE_LOGS == 1:
                 np.save(log_dir + "y.npy", new_y)
             # evaluate on validation and test data
-            val_accuracy, val_loss = evaluate(net, m_dataloader, criterion_cce)
-            test_accuracy, test_loss = evaluate(net, test_dataloader, criterion_cce)
+            val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
+            test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion_cce)
             if val_accuracy > val_acc_best: 
                 val_acc_best = val_accuracy
                 test_acc_best = test_accuracy
                 epoch_best = epoch
+                topk_acc_best = topk_accuracy
 
             if SAVE_LOGS == 1:
                 summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
@@ -251,7 +255,10 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 summary_writer.add_scalar('val_loss', val_loss, epoch)
                 summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
                 summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+                summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
                 summary_writer.add_scalar('label_similarity', label_similarity.percentage, epoch)
+                summary_writer.add_scalar('label_diff_mean', abs(new_y[meta_epoch+1]-new_y[meta_epoch]).mean(), epoch)
+                summary_writer.add_scalar('label_diff_var', abs(new_y[meta_epoch+1]-new_y[meta_epoch]).var(), epoch)
                 summary_writer.add_figure('confusion_matrix', plot_confusion_matrix(net, test_dataloader), epoch)
                 for tag, parm in meta_net.named_parameters():
                     summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
@@ -262,20 +269,20 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Hyper-params(alpha,beta,gamma,c,k,p): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Hyper-params(alpha,beta,gamma,c,k,p1,p2): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
-                                    train_accuracy.percentage, train_accuracy_meta.percentage, val_accuracy, test_accuracy,
+                                    train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,
+                                    label_similarity.percentage, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}/{:4.3f},Hyper-params(alpha,beta,gamma,c,k,p1,p2): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}/{},Hyper-params(alpha,beta,gamma,c,k,p1,p2): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
             hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'mixup': MIXUP, 'num_train': NUM_TRAINDATA}, 
-                                  {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'epoch_best':epoch_best})
+                                  {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
 
@@ -344,42 +351,44 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 feature_vectors = features4meta[idx_i].copy()
 
                 centroid_i = np.mean(feature_vectors, axis = 0)#kmeans.cluster_centers_[i]
-                distances_i = np.zeros(len(idx_i))
+                num_i_afterloss = len(idx_i)
+                distances_i = np.zeros(num_i_afterloss)
                 if clean_data_type == 'mahalanobis':
                     cov_i = np.cov(feature_vectors.transpose())
                     try:
                         invcov_i = np.linalg.inv(cov_i)
                     except:
                         invcov_i = np.linalg.pinv(cov_i)
-                    for j in range(len(idx_i)):
+                    for j in range(num_i_afterloss):
                         distances_i[j] = distance.mahalanobis(feature_vectors[j], centroid_i, invcov_i)
                 elif clean_data_type == 'euclidean':
-                    for j in range(len(idx_i)):
+                    for j in range(num_i_afterloss):
                         distances_i[j] = distance.euclidean(feature_vectors[j], centroid_i)
                 sorted_idx_i = np.argsort(distances_i)
+                #considered_idx = sorted_idx_i[:int(num_i_consider*percentage_consider2)]
+                #considered_idx = np.take(idx_i, considered_idx)
+                #anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
 
-                #t = np.diff(distances_i[sorted_idx_i])
-                #idx_diff = np.where(t > 0.1)[0]
-                #t2 = np.where(idx_diff > num_i_consider*0.5)[0][0]
-                #num_i_consider_diff = idx_diff[t2] - 10
-
-                considered_idx = sorted_idx_i[:int(num_i_consider*percentage_consider2)]
+                percentage_clip = (1 - percentage_consider2)/2
+                considered_idx = sorted_idx_i[int(num_i_afterloss*percentage_clip):num_i_afterloss-int(num_i_afterloss*percentage_clip)]
                 considered_idx = np.take(idx_i, considered_idx)
+                idx_rand = np.random.choice(considered_idx.shape[0], num_meta_data_per_class, replace=False)
+                anchor_idx_i = considered_idx[idx_rand]
 
-
-                #kmeans = KMeans(n_clusters=kmeans_clusternum, random_state=RANDOM_SEED).fit(features4meta[considered_idx])
-                #kmeans_labels = kmeans.predict(features4meta[considered_idx])
-                #num_samples_i = len(considered_idx)
+                #kmeans = KMeans(n_clusters=kmeans_clusternum, random_state=RANDOM_SEED).fit(features4meta[idx_i])
+                #kmeans_labels = kmeans.predict(features4meta[idx_i])
+                #num_samples_i = len(idx_i)
                 #anchor_idx_i = None
                 #for j in range(kmeans_clusternum):
                 #    idx_j = kmeans_labels == j
                 #    idx_j = np.where(idx_j == True)[0]
-                #    idx_j = considered_idx[idx_j]
+                #    idx_j = idx_i[idx_j]
                 #    cluster_count_j = len(idx_j)
-                #    num2pick = int(num_meta_data_per_class/kmeans_clusternum)#int((cluster_count_j / num_samples_i)*num_meta_data_per_class)
+                #    num2pick = int((cluster_count_j / num_samples_i)*num_meta_data_per_class)#int(num_meta_data_per_class/kmeans_clusternum)
                 #    distances_j = kmeans.transform(features4meta[idx_j])[:,j]
                 #    sorted_idx_j = np.argsort(distances_j)  
-                #    selected_idx_j = sorted_idx_j[int(len(sorted_idx_j)/2-num2pick/2):int(len(sorted_idx_j)/2+num2pick/2)]   
+                #    selected_idx_j = sorted_idx_j[int(len(sorted_idx_j)/2-num2pick/2):int(len(sorted_idx_j)/2+num2pick/2)] 
+                #    selected_idx_j  = idx_j[selected_idx_j]
                 #    if anchor_idx_i is None:
                 #        anchor_idx_i = selected_idx_j
                 #    else:
@@ -408,7 +417,6 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
                 #    else:
                 #        anchor_idx_i = np.concatenate((anchor_idx_i,anchor_idx_tmp))
 
-                anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
                 if idx_meta is None:
                     idx_meta = anchor_idx_i
                 else:
@@ -500,6 +508,7 @@ def metapencil(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clust
     # get datasets
     t_dataset, m_dataset, t_dataloader, m_dataloader = train_dataset, meta_dataset, train_dataloader, meta_dataloader
     n_idx, c_labels = noisy_idx, clean_labels
+    meta_true = None
     NUM_TRAINDATA = len(t_dataset)
 
     # loss functions
@@ -597,6 +606,7 @@ def set_learningrate(optimizer, lr):
 def evaluate(net, dataloader, criterion):
     if dataloader:
         eval_accuracy = AverageMeter()
+        topk_accuracy = AverageMeter()
         eval_loss = AverageMeter()
 
         net.eval()
@@ -606,11 +616,20 @@ def evaluate(net, dataloader, criterion):
                 outputs = net(inputs) 
                 loss = criterion(outputs, targets) 
                 _, predicted = torch.max(outputs.data, 1) 
+                _, topks = torch.topk(outputs.data, 5, 1) 
                 eval_accuracy.update(predicted.eq(targets.data).cpu().sum().item(), targets.size(0)) 
                 eval_loss.update(loss.item())
-        return eval_accuracy.percentage, eval_loss.avg
+
+                topks = topks.cpu().numpy()
+                targets_tmp = targets.cpu().numpy()
+                topk_num = 0
+                for i in range(topks.shape[0]):
+                    if targets_tmp[i] in topks[i]:
+                        topk_num += 1
+                topk_accuracy.update(topk_num, targets.size(0))
+        return eval_accuracy.percentage, eval_loss.avg, topk_accuracy
     else:
-        return 0, 0
+        return 0, 0, 0
 
 def plot_confusion_matrix(net, dataloader):
     net.eval()
@@ -652,7 +671,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='WebVision',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-n', '--noise_type', required=False, type=str, default='feature-dependent',
         help="Noise type for cifar10: 'feature-dependent', 'symmetric'")
@@ -677,7 +696,7 @@ if __name__ == "__main__":
     
     parser.add_argument('-c', '--clean_data_type', required=False, type=str, default='validation',
         help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
-    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=1000,
+    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
         help="Number of samples to be used as meta-data")
     parser.add_argument('-k', '--kmeans_clusternum', required=False, type=int, default=10,
         help="Number of kmeans clusters")
@@ -784,5 +803,5 @@ if __name__ == "__main__":
         hp_writer = SummaryWriter(log_dir_hp)
     
     start_train = time.time()
-    metapencil(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2)
+    meta_noisy_train(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2)
     print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))
