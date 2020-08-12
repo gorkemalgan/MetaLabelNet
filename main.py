@@ -627,7 +627,7 @@ def evaluate(net, dataloader, criterion):
                     if targets_tmp[i] in topks[i]:
                         topk_num += 1
                 topk_accuracy.update(topk_num, targets.size(0))
-        return eval_accuracy.percentage, eval_loss.avg, topk_accuracy
+        return eval_accuracy.percentage, eval_loss.avg, topk_accuracy.percentage
     else:
         return 0, 0, 0
 
