@@ -2,8 +2,8 @@ DATASETS_SMALL = ['mnist_fashion','cifar10','cifar100']
 DATASETS_BIG = ['food101N', 'clothing1M', 'clothing1M50k', 'clothing1Mbalanced', 'WebVision']
 DATASETS = DATASETS_SMALL + DATASETS_BIG
 
-IMG_RESIZED = 256
-IMG_CROPPED = 224
+IMG_RESIZED = {'food101N':256, 'clothing1M':256, 'clothing1M50k':256, 'clothing1Mbalanced':256, 'WebVision':320}
+IMG_CROPPED = {'food101N':224, 'clothing1M':224, 'clothing1M50k':224, 'clothing1Mbalanced':224, 'WebVision':299}
 
 import numpy as np
 import os, sys
@@ -670,6 +670,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             target = int(target)
             if target < num_classes:
                 img_path = data_dir+img
+                img_path = img_path.replace('google', 'google_resized_256/google')
                 train_imgs.append(img_path)
                 train_labels[img_path]=target  
 
@@ -706,9 +707,9 @@ def get_bigdata_tf(dataset_name,random_seed,num_validation):
             # Use `convert_image_dtype` to convert to floats in the [0,1] range.
             img = tf.image.convert_image_dtype(img, tf.float32)
             # resize the image to the desired size.
-            img = tf.image.resize(img, [IMG_RESIZED, IMG_RESIZED])
+            img = tf.image.resize(img, [IMG_RESIZED[dataset_name], IMG_RESIZED[dataset_name]])
             # crop from center to resize 224
-            img = tf.image.central_crop(img, IMG_CROPPED/IMG_RESIZED)
+            img = tf.image.central_crop(img, IMG_CROPPED[dataset_name]/IMG_RESIZED[dataset_name])
             # normalization of mean and std
             img = tf.image.per_image_standardization(img)
             label = tf.cast(labels[img_path.decode('utf-8')], tf.int32)
@@ -724,7 +725,7 @@ def get_bigdata_tf(dataset_name,random_seed,num_validation):
     train_ds = tf.data.Dataset.from_tensor_slices(train_imgs).map(lambda x: tf.numpy_function(func=get_procfunc(train_labels), inp=[x], Tout=[tf.float32, tf.int32]))
     test_ds = tf.data.Dataset.from_tensor_slices(test_imgs).map(lambda x: tf.numpy_function(func=get_procfunc(test_labels), inp=[x], Tout=[tf.float32, tf.int32]))
     # this part is required because after mapping dataset with tf.numpy_function, it looses its shape
-    img_shape = [IMG_CROPPED, IMG_CROPPED, 3]
+    img_shape = [IMG_CROPPED[dataset_name], IMG_CROPPED[dataset_name], 3]
     train_ds = train_ds.map(lambda img, label: set_shapes(img, label, img_shape))
     test_ds = test_ds.map(lambda img, label: set_shapes(img, label, img_shape))
 
@@ -742,8 +743,8 @@ def get_bigdata_torch(dataset_name,random_seed,num_validation):
     import torchvision.transforms as transforms      
     train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
     transform = transforms.Compose([
-            transforms.Resize(IMG_RESIZED),
-            transforms.CenterCrop(IMG_CROPPED),
+            transforms.Resize(IMG_RESIZED[dataset_name]),
+            transforms.CenterCrop(IMG_CROPPED[dataset_name]),
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
         ]) 

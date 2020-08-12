@@ -68,14 +68,14 @@ class Mixed_5b(nn.Module):
             x2 = self.branch2(x)
             x3 = self.branch3(x)
         else:
-            x0 = self.conv0(x,weights,'mixed_5b.branch0')
-            x1 = self.conv1(x,weights,'mixed_5b.branch1.0')
-            x1 = self.conv2(x1,weights,'mixed_5b.branch1.1')
-            x2 = self.conv3(x,weights,'mixed_5b.branch2.0')
-            x2 = self.conv4(x2,weights,'mixed_5b.branch2.1')
-            x2 = self.conv5(x2,weights,'mixed_5b.branch2.2')
+            x0 = self.conv0(x,weights,'mixed_5b.conv0')
+            x1 = self.conv1(x,weights,'mixed_5b.conv1')
+            x1 = self.conv2(x1,weights,'mixed_5b.conv2')
+            x2 = self.conv3(x,weights,'mixed_5b.conv3')
+            x2 = self.conv4(x2,weights,'mixed_5b.conv4')
+            x2 = self.conv5(x2,weights,'mixed_5b.conv5')
             x3 = F.avg_pool2d(x, kernel_size=3, stride=1, padding=1, count_include_pad=False)
-            x3 = self.conv6(x3,weights,'mixed_5b.branch3.1')
+            x3 = self.conv6(x3,weights,'mixed_5b.conv6')
         out = torch.cat((x0, x1, x2, x3), 1)
         return out
 
@@ -117,12 +117,12 @@ class Block35(nn.Module):
             out = out * self.scale + x
             out = self.relu(out)
         else:
-            x0 = self.conv0(x,weights,'{}.branch0'.format(name))
-            x1 = self.conv1(x,weights,'{}.branch1.0'.format(name))
-            x1 = self.conv2(x1,weights,'{}.branch1.1'.format(name))
-            x2 = self.conv3(x,weights,'{}.branch2.0'.format(name))
-            x2 = self.conv3(x2,weights,'{}.branch2.1'.format(name))
-            x2 = self.conv3(x2,weights,'{}.branch2.2'.format(name))
+            x0 = self.conv0(x,weights,'{}.conv0'.format(name))
+            x1 = self.conv1(x,weights,'{}.conv1'.format(name))
+            x1 = self.conv2(x1,weights,'{}.conv2'.format(name))
+            x2 = self.conv3(x,weights,'{}.conv3'.format(name))
+            x2 = self.conv4(x2,weights,'{}.conv4'.format(name))
+            x2 = self.conv5(x2,weights,'{}.conv5'.format(name))
             out = torch.cat((x0, x1, x2), 1)
             out = F.conv2d(out, weights['{}.conv2d.weight'.format(name)], weights['{}.conv2d.bias'.format(name)], stride=1)
             out = out * self.scale + x
@@ -154,10 +154,10 @@ class Mixed_6a(nn.Module):
             x1 = self.branch1(x)
             x2 = self.branch2(x)
         else:
-            x0 = self.conv0(x,weights,'mixed_6a.branch0')
-            x1 = self.conv1(x,weights,'mixed_6a.branch1.0')
-            x1 = self.conv2(x1,weights,'mixed_6a.branch1.1')
-            x1 = self.conv3(x1,weights,'mixed_6a.branch1.2')
+            x0 = self.conv0(x,weights,'mixed_6a.conv0')
+            x1 = self.conv1(x,weights,'mixed_6a.conv1')
+            x1 = self.conv2(x1,weights,'mixed_6a.conv2')
+            x1 = self.conv3(x1,weights,'mixed_6a.conv3')
             x2 = F.max_pool2d(x, kernel_size=3, stride=2)
         out = torch.cat((x0, x1, x2), 1)
         return out
@@ -193,10 +193,10 @@ class Block17(nn.Module):
             out = out * self.scale + x
             out = self.relu(out)
         else:
-            x0 = self.conv0(x,weights,'{}.branch0'.format(name))
-            x1 = self.conv1(x,weights,'{}.branch1.0'.format(name))
-            x1 = self.conv2(x1,weights,'{}.branch1.1'.format(name))
-            x1 = self.conv3(x1,weights,'{}.branch1.2'.format(name))
+            x0 = self.conv0(x,weights,'{}.conv0'.format(name))
+            x1 = self.conv1(x,weights,'{}.conv1'.format(name))
+            x1 = self.conv2(x1,weights,'{}.conv2'.format(name))
+            x1 = self.conv3(x1,weights,'{}.conv3'.format(name))
             out = torch.cat((x0, x1), 1)
             out = F.conv2d(out, weights['{}.conv2d.weight'.format(name)], weights['{}.conv2d.bias'.format(name)], stride=1)
             out = out * self.scale + x
@@ -239,13 +239,13 @@ class Mixed_7a(nn.Module):
             x2 = self.branch2(x)
             x3 = self.branch3(x)
         else:
-            x0 = self.conv0(x,weights,'mixed_7a.branch0.0')
-            x0 = self.conv1(x0,weights,'mixed_7a.branch0.1')
-            x1 = self.conv2(x,weights,'mixed_7a.branch1.0')
-            x1 = self.conv3(x1,weights,'mixed_7a.branch1.1')
-            x2 = self.conv4(x,weights,'mixed_7a.branch2.0')
-            x2 = self.conv5(x2,weights,'mixed_7a.branch2.1')
-            x2 = self.conv6(x2,weights,'mixed_7a.branch2.2')
+            x0 = self.conv0(x,weights,'mixed_7a.conv0')
+            x0 = self.conv1(x0,weights,'mixed_7a.conv1')
+            x1 = self.conv2(x,weights,'mixed_7a.conv2')
+            x1 = self.conv3(x1,weights,'mixed_7a.conv3')
+            x2 = self.conv4(x,weights,'mixed_7a.conv4')
+            x2 = self.conv5(x2,weights,'mixed_7a.conv5')
+            x2 = self.conv6(x2,weights,'mixed_7a.conv6')
             x3 = F.max_pool2d(x, kernel_size=3, stride=2)
         out = torch.cat((x0, x1, x2, x3), 1)
         return out
@@ -284,10 +284,10 @@ class Block8(nn.Module):
             if not self.noReLU:
                 out = self.relu(out)
         else:
-            x0 = self.conv0(x,weights,'{}.branch0'.format(name))
-            x1 = self.conv1(x,weights,'{}.branch1.0'.format(name))
-            x1 = self.conv2(x1,weights,'{}.branch1.1'.format(name))
-            x1 = self.conv3(x1,weights,'{}.branch1.2'.format(name))
+            x0 = self.conv0(x,weights,'{}.conv0'.format(name))
+            x1 = self.conv1(x,weights,'{}.conv1'.format(name))
+            x1 = self.conv2(x1,weights,'{}.conv2'.format(name))
+            x1 = self.conv3(x1,weights,'{}.conv3'.format(name))
             out = torch.cat((x0, x1), 1)
             out = F.conv2d(out, weights['{}.conv2d.weight'.format(name)], weights['{}.conv2d.bias'.format(name)], stride=1)
             out = out * self.scale + x
@@ -402,7 +402,7 @@ class InceptionResNetV2(nn.Module):
         else:
             for i in range(9):
                 self.block8(x,weights, 'repeat_2.{}'.format(i))
-        x = self.block8(x, weights)
+        x = self.block8(x, weights, 'block8')
         x = self.conv2d_7b(x, weights, 'conv2d_7b')
         return x
 
@@ -412,7 +412,7 @@ class InceptionResNetV2(nn.Module):
             x = x.view(x.size(0), -1)
             x = self.last_linear(x)
         else:
-            x = F.avg_pool1d(features, kernel_size=8, count_include_pad=False)
+            x = F.avg_pool2d(features, kernel_size=8, count_include_pad=False)
             x = x.view(x.size(0), -1)
             x = F.linear(x, weights['last_linear.weight'], weights['last_linear.bias'])         
         return x
