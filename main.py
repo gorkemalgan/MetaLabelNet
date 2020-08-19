@@ -29,23 +29,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':100}}
-
-def mixup_data(x, y, alpha=1.0, use_cuda=True):
-    '''Returns mixed inputs, pairs of targets, and lambda'''
-    if alpha > 0:
-        lam = np.random.beta(4, 2)
-    else:
-        lam = 1
-
-    batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(DEVICE)
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
-
-def mixup_criterion(criterion, pred, y_a, y_b, lam):
-    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':8, 'stage2':20}}
 
 def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
     def warmup_training(model_s1_path):
@@ -120,23 +104,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                 summary_writer.add_scalar('topk_accuracy', topk_accuracy, stage1-1)
 
     def meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats):
-        if MIXUP == 1:
-            images_meta, targets_a_meta, targets_b_meta, lam_meta = mixup_data(images_meta, labels_meta)
         meta_net.train()
         # meta training for predicted labels
         lc = criterion_meta(output, yy)                                            # classification loss
         # train for classification loss with meta-learning
         net.zero_grad()
-        grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True)
+        grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True, allow_unused=True)
+        grads = [grad for grad in grads if grad is not None]
         for grad in grads:
             grad.detach()
         fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
 
-        if MIXUP == 1:
-            loss_meta = mixup_criterion(criterion_cce, fast_out, targets_a_meta, targets_b_meta, lam_meta)
-        else:
-            loss_meta = criterion_cce(fast_out, labels_meta)
+        loss_meta = criterion_cce(fast_out, labels_meta)
         loss_compatibility = criterion_cce(yy, labels)
         loss_all = loss_meta + gamma*loss_compatibility
 
@@ -256,6 +236,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                 summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
                 summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
                 summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
+                summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
                 summary_writer.add_scalar('label_similarity', label_similarity.percentage, epoch)
                 summary_writer.add_scalar('label_diff_mean', abs(new_y[meta_epoch+1]-new_y[meta_epoch]).mean(), epoch)
                 summary_writer.add_scalar('label_diff_var', abs(new_y[meta_epoch+1]-new_y[meta_epoch]).var(), epoch)
@@ -281,7 +262,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'mixup': MIXUP, 'num_train': NUM_TRAINDATA}, 
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA}, 
                                   {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -484,7 +465,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         m_dataloader = torch.utils.data.DataLoader(m_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers, drop_last=True)
         return t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true
 
-    print('use_clean:{}, k:{}, p1:{}, p2:{}, mixup: {}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, MIXUP, alpha, beta, gamma, stage1, stage2))
+    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2))
 
     class MetaNet(nn.Module):
         def __init__(self, input, output):
@@ -559,12 +540,6 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     # meta training
     meta_training()
 
-def get_topk(arr, percent=0.01):
-    arr_flat = arr.flatten()
-    arr_len = int(len(arr_flat)*percent)
-    idx = np.argsort(np.absolute(arr_flat))[-arr_len:]
-    return arr_flat[idx]
-
 def image_grid(idx, train_dataset, grads):
     """Return a 5x5 grid of the MNIST images as a matplotlib figure."""
     # Create a figure to contain the plot.
@@ -627,9 +602,7 @@ def evaluate(net, dataloader, criterion):
                     if targets_tmp[i] in topks[i]:
                         topk_num += 1
                 topk_accuracy.update(topk_num, targets.size(0))
-        return eval_accuracy.percentage, eval_loss.avg, topk_accuracy.percentage
-    else:
-        return 0, 0, 0
+    return eval_accuracy.percentage, eval_loss.avg, topk_accuracy.percentage
 
 def plot_confusion_matrix(net, dataloader):
     net.eval()
@@ -704,8 +677,6 @@ if __name__ == "__main__":
         help="Expected percentage of data to consider for meta-data")
     parser.add_argument('-p2', '--percentage_consider2', required=False, type=float, default=0.5,
         help="Expected percentage of data to consider for meta-data")
-    parser.add_argument('-mu', '--mixup', required=False, type=int, default=0,
-        help="Whether to mixup meta data or not")
 
     parser.add_argument('-a', '--alpha', required=False, type=float,
         help="Learning rate for meta iteration")
@@ -738,7 +709,6 @@ if __name__ == "__main__":
     SAVE_LOGS = args.save_logs
     USE_SAVED = args.use_saved
     RANDOM_SEED = args.seed
-    MIXUP = args.mixup
     VERBOSE = args.verbose
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:

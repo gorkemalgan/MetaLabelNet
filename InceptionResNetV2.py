@@ -370,7 +370,7 @@ class InceptionResNetV2(nn.Module):
         self.block17 = Block17(scale=0.10)
         self.block8 = Block8(scale=0.20)
 
-    def features(self, input, weights=None):
+    def forward(self, input, weights=None, get_feat=None):
         x = self.conv2d_1a(input, weights, 'conv2d_1a')
         x = self.conv2d_2a(x, weights, 'conv2d_2a')
         x = self.conv2d_2b(x, weights, 'conv2d_2b')
@@ -404,24 +404,17 @@ class InceptionResNetV2(nn.Module):
                 self.block8(x,weights, 'repeat_2.{}'.format(i))
         x = self.block8(x, weights, 'block8')
         x = self.conv2d_7b(x, weights, 'conv2d_7b')
-        return x
-
-    def logits(self, features, weights=None):
         if weights == None:
-            x = self.avgpool_1a(features)
-            x = x.view(x.size(0), -1)
-            x = self.last_linear(x)
+            x = self.avgpool_1a(x)
         else:
-            x = F.avg_pool2d(features, kernel_size=8, count_include_pad=False)
-            x = x.view(x.size(0), -1)
-            x = F.linear(x, weights['last_linear.weight'], weights['last_linear.bias'])         
-        return x
-
-    def forward(self, input, weights=None, get_feat=None):
-        feats = self.features(input, weights)
-        x = self.logits(feats,weights)
+            x = F.avg_pool2d(x, kernel_size=8, count_include_pad=False)
+        features = x.view(x.size(0), -1)
+        if weights == None:
+            x = self.last_linear(features)
+        else:
+            x = F.linear(features, weights['last_linear.weight'], weights['last_linear.bias'])      
         if get_feat:
-            return x,feats
+            return x,features
         else:
             return x
 

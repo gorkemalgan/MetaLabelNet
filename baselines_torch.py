@@ -21,6 +21,7 @@ def cross_entropy(criterion):
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
+    topk_acc_best = 0
 
     for epoch in range(PARAMS[dataset]['epochs']):
         start_epoch = time.time()
@@ -58,12 +59,13 @@ def cross_entropy(criterion):
             sys.stdout.flush()
                 
         # evaluate on validation and test data
-        val_accuracy, val_loss = evaluate(net, val_dataloader, criterion)
-        test_accuracy, test_loss = evaluate(net, test_dataloader, criterion)
+        val_accuracy, val_loss, topk_accuracy = evaluate(net, val_dataloader, criterion)
+        test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion)
         if val_accuracy > val_acc_best: 
             val_acc_best = val_accuracy
             test_acc_best = test_accuracy
             epoch_best = epoch
+            topk_acc_best = topk_accuracy
 
         summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
         summary_writer.add_scalar('test_loss', test_loss, epoch)
@@ -73,14 +75,16 @@ def cross_entropy(criterion):
         summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
         summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
         summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+        summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
+        summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
 
         save_model(net, epoch)
         if verbose != 0:
-            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
-            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
+            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, topk_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
         
-    print('Train acc: {:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
-        train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
+    print('Train acc: {:5.3f}, Topk acc: {:5.3f}-{:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
+        train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
     ))
     summary_writer.close()
     torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -204,6 +208,7 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
+    topk_acc_best = 0
 
     for epoch in range(stage3): 
         start_epoch = time.time()
@@ -295,12 +300,13 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
             np.save(y_file,y)
 
         # evaluate on validation and test data
-        val_accuracy, val_loss = evaluate(net, val_dataloader, criterion)
-        test_accuracy, test_loss = evaluate(net, test_dataloader, criterion)
+        val_accuracy, val_loss, topk_accuracy = evaluate(net, val_dataloader, criterion)
+        test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion)
         if val_accuracy > val_acc_best: 
             val_acc_best = val_accuracy
             test_acc_best = test_accuracy
             epoch_best = epoch
+            topk_acc_best = topk_accuracy
 
         summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
         summary_writer.add_scalar('test_loss', test_loss, epoch)
@@ -310,16 +316,18 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
         summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
         summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
         summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+        summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
+        summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
         if grads_yy_log != None:
             summary_writer.add_histogram('grads_yy', grads_yy_log, epoch)
 
         if verbose != 0:
-            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
-            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
+            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, topk_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
         save_model(net, epoch)
 
-    print('Train acc: {:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
-        train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
+    print('Train acc: {:5.3f}, Topk acc: {:5.3f}-{:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
+        train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
     ))
     summary_writer.close()
     torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -360,6 +368,7 @@ def coteaching(criterion):
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
+    topk_acc_best = 0
 
     for epoch in range(PARAMS[dataset]['epochs']):
         start_epoch = time.time()
@@ -421,16 +430,17 @@ def coteaching(criterion):
             sys.stdout.flush()
 
         # evaluate on validation and test data
-        val_accuracy1, val_loss1 = evaluate(net1, val_dataloader, criterion)
-        test_accuracy1, test_loss1 = evaluate(net1, test_dataloader, criterion)
+        val_accuracy1, val_loss1, topk_accuracy1 = evaluate(net1, val_dataloader, criterion)
+        test_accuracy1, test_loss1, topk_accuracy1 = evaluate(net1, test_dataloader, criterion)
         # evaluate on validation and test data
-        val_accuracy2, val_loss2 = evaluate(net2, val_dataloader, criterion)
-        test_accuracy2, test_loss2 = evaluate(net2, test_dataloader, criterion)
+        val_accuracy2, val_loss2, topk_accuracy2 = evaluate(net2, val_dataloader, criterion)
+        test_accuracy2, test_loss2, topk_accuracy2 = evaluate(net2, test_dataloader, criterion)
 
         if max(val_accuracy1, val_accuracy2) > val_acc_best: 
             val_acc_best = max(val_accuracy1, val_accuracy2)
             test_acc_best = max(test_accuracy1, test_accuracy2)
             epoch_best = epoch
+            topk_acc_best = max(topk_accuracy1, topk_accuracy2)
 
         summary_writer.add_scalar('train_loss1', train_loss1.avg, epoch)
         summary_writer.add_scalar('train_accuracy1', train_accuracy1.percentage, epoch)
@@ -444,6 +454,8 @@ def coteaching(criterion):
         summary_writer.add_scalar('val_accuracy2', val_accuracy2, epoch)
         summary_writer.add_scalar('test_loss2', test_loss2, epoch)
         summary_writer.add_scalar('test_accuracy2', test_accuracy2, epoch)
+        summary_writer.add_scalar('topk_accuracy1', topk_accuracy1, epoch)
+        summary_writer.add_scalar('topk_accuracy2', topk_accuracy2, epoch)
 
         summary_writer.add_scalar('train_loss', min(train_loss1.avg, train_loss2.avg), epoch)
         summary_writer.add_scalar('train_accuracy', max(train_accuracy1.percentage, train_accuracy2.percentage), epoch)
@@ -453,10 +465,11 @@ def coteaching(criterion):
         summary_writer.add_scalar('test_accuracy', max(test_accuracy1, test_accuracy2), epoch)
         summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
         summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+        summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
 
         if verbose != 0:
             end = time.time()
-            template = 'Model1 - Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            template = 'Model1 - Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
             print(template.format(epoch + 1,
                                     train_loss1.avg,
                                     train_accuracy1.avg,
@@ -464,9 +477,10 @@ def coteaching(criterion):
                                     val_accuracy1,
                                     test_loss1,
                                     test_accuracy1,
+                                    topk_accuracy1,
                                     lr_scheduler(epoch),
                                     end-start_epoch, (end-start_epoch)/3600))
-            template = 'Model2 - Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            template = 'Model2 - Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
             print(template.format(epoch + 1,
                                 train_loss2.avg,
                                 train_accuracy2.avg,
@@ -474,13 +488,14 @@ def coteaching(criterion):
                                 val_accuracy2,
                                 test_loss2,
                                 test_accuracy2,
+                                topk_accuracy2,
                                 lr_scheduler(epoch),
                                 end-start_epoch, (end-start_epoch)/3600))
         save_model(net1, epoch, 'model1')
         save_model(net2, epoch, 'model2')
 
-    print('Train acc: {:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
-        max(train_accuracy1.percentage, train_accuracy2.percentage), max(val_accuracy1, val_accuracy2), val_acc_best, max(test_accuracy1, test_accuracy2), test_acc_best, 
+    print('Train acc: {:5.3f}, Topk acc: {:5.3f}-{:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
+        max(train_accuracy1.percentage, train_accuracy2.percentage), max(topk_accuracy1, topk_accuracy2), topk_acc_best, max(val_accuracy1, val_accuracy2), val_acc_best, max(test_accuracy1, test_accuracy2), test_acc_best, 
         min(train_loss1.avg, train_loss2.avg),  min(val_loss1, val_loss2), min(test_loss1, test_loss2), epoch_best
     ))
     torch.save(net1.state_dict(), os.path.join(log_dir, 'saved_model1.pt'))
@@ -517,6 +532,7 @@ def metaweightnet():
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
+    topk_acc_best = 0
 
     for epoch in range(PARAMS[dataset]['epochs']): 
         start_epoch = time.time()
@@ -589,12 +605,13 @@ def metaweightnet():
             sys.stdout.flush()
 
         # evaluate on validation and test data
-        val_accuracy, val_loss = evaluate(net, val_dataloader, F.cross_entropy)
-        test_accuracy, test_loss = evaluate(net, test_dataloader, F.cross_entropy)
+        val_accuracy, val_loss, topk_accuracy = evaluate(net, val_dataloader, F.cross_entropy)
+        test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, F.cross_entropy)
         if val_accuracy > val_acc_best: 
             val_acc_best = val_accuracy
             test_acc_best = test_accuracy
             epoch_best = epoch
+            topk_acc_best = topk_accuracy
 
         summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
         summary_writer.add_scalar('test_loss', test_loss, epoch)
@@ -604,14 +621,16 @@ def metaweightnet():
         summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
         summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
         summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+        summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
+        summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
 
         if verbose != 0:
-            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
-            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
+            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, topk_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
         save_model(net, epoch)
 
-    print('Train acc: {:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
-        train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
+    print('Train acc: {:5.3f}, Topk acc: {:5.3f}-{:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
+        train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
     ))
     summary_writer.close()
     torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -641,6 +660,7 @@ def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0
     test_acc_best = 0
     val_acc_best = 0
     epoch_best = 0
+    topk_acc_best = 0
 
     for epoch in range(PARAMS[dataset]['epochs']): 
         start_epoch = time.time()
@@ -728,12 +748,13 @@ def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0
             sys.stdout.flush()
                 
         # evaluate on validation and test data
-        val_accuracy, val_loss = evaluate(net, val_dataloader, criterion)
-        test_accuracy, test_loss = evaluate(net, test_dataloader, criterion)
+        val_accuracy, val_loss, topk_accuracy = evaluate(net, val_dataloader, criterion)
+        test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion)
         if val_accuracy > val_acc_best: 
             val_acc_best = val_accuracy
             test_acc_best = test_accuracy
             epoch_best = epoch
+            topk_acc_best = topk_accuracy
 
         summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
         summary_writer.add_scalar('test_loss', test_loss, epoch)
@@ -743,14 +764,16 @@ def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0
         summary_writer.add_scalar('val_accuracy', val_accuracy, epoch)
         summary_writer.add_scalar('test_accuracy_best', test_acc_best, epoch)
         summary_writer.add_scalar('val_accuracy_best', val_acc_best, epoch)
+        summary_writer.add_scalar('topk_accuracy', topk_accuracy, epoch)
+        summary_writer.add_scalar('topk_accuracy_best', topk_acc_best, epoch)
 
         if verbose != 0:
-            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
-            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
+            template = 'Epoch {}, Loss: {:7.4f}, Accuracy: {:5.3f}, Val Loss: {:7.4f}, Val Accuracy: {:5.3f}, Test Loss: {:7.4f}, Test Accuracy: {:5.3f}/{:5.3f}, lr: {:7.6f} Time: {:3.1f}({:3.2f})'
+            print(template.format(epoch + 1, train_loss.avg, train_accuracy.percentage, val_loss, val_accuracy, test_loss, test_accuracy, topk_accuracy, lr_scheduler(epoch), time.time()-start_epoch, (time.time()-start_epoch)/3600))
         save_model(net, epoch)
 
-    print('Train acc: {:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
-        train_accuracy.percentage, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
+    print('Train acc: {:5.3f}, Topk acc: {:5.3f}-{:5.3f}, Val acc: {:5.3f}-{:5.3f}, Test acc: {:5.3f}-{:5.3f} / Train loss: {:7.4f}, Val loss: {:7.4f}, Test loss: {:7.4f} / Best epoch: {}'.format(
+        train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, train_loss.avg, val_loss, test_loss, epoch_best
     ))
     summary_writer.close()
     torch.save(tch_net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -758,6 +781,7 @@ def mlnt(criterion, consistent_criterion, start_iter=500, mid_iter = 2000, eps=0
 def evaluate(net, dataloader, criterion):
     eval_accuracy = AverageMeter()
     eval_loss = AverageMeter()
+    topk_accuracy = AverageMeter()
 
     net.eval()
     if dataloader:
@@ -767,9 +791,18 @@ def evaluate(net, dataloader, criterion):
                 outputs = net(inputs) 
                 loss = criterion(outputs, targets) 
                 _, predicted = torch.max(outputs.data, 1) 
+                _, topks = torch.topk(outputs.data, 5, 1) 
                 eval_accuracy.update(predicted.eq(targets.data).cpu().sum().item(), targets.size(0)) 
                 eval_loss.update(loss.item())
-    return eval_accuracy.percentage, eval_loss.avg
+
+                topks = topks.cpu().numpy()
+                targets_tmp = targets.cpu().numpy()
+                topk_num = 0
+                for i in range(topks.shape[0]):
+                    if targets_tmp[i] in topks[i]:
+                        topk_num += 1
+                topk_accuracy.update(topk_num, targets.size(0))
+    return eval_accuracy.percentage, eval_loss.avg, topk_accuracy.percentage
 
 def save_model(model, epoch, model_name='model'):
     if dataset in DATASETS_BIG:
@@ -780,10 +813,6 @@ def save_model(model, epoch, model_name='model'):
 
 def main(args):
     start_train = time.time()
-    # create necessary folders
-    create_folder('{}/dataset'.format(dataset))
-    create_folder(log_dir)
-
     criterion = nn.CrossEntropyLoss().to(device)
 
     if model_name == 'cross_entropy':
@@ -815,7 +844,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', required=False, type=str, default='WebVision',
+    parser.add_argument('-d', '--dataset', required=False, type=str, default='cifar10',
         help="Dataset to use; either 'mnist_fashion', 'cifar10', 'cifar100', 'food101N', 'clothing1M'")
     parser.add_argument('-m', '--model_name', required=False, type=str, default='cross_entropy',
         help="""Model name: 'cross_entropy', 
@@ -897,6 +926,9 @@ if __name__ == "__main__":
     log_dir = log_base + log_folder + '/'
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    # create necessary folders
+    create_folder('{}/dataset'.format(dataset))
+    create_folder(log_dir)
 
     print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}".format(dataset, model_name, device, BATCH_SIZE, ngpu))
     if dataset in DATASETS_SMALL:

@@ -15,7 +15,8 @@ NUM_CLASSES = {'mnist_fashion':10, 'cifar10':10,  'cifar100':100, 'clothing1M':1
 try:
     from torch.utils.data import Dataset
     import torchvision.transforms as transforms   
-    from PIL import Image 
+    from PIL import Image , ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
     class torch_dataset(Dataset): 
         def __init__(self, img_paths, labels, transform, num_classes): 
             self.transform = transform
@@ -688,7 +689,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             img, target = line.split()
             target = int(target)
             if target < num_classes:
-                img_path = data_dir+'val_images_256/'+img
+                img_path = data_dir+'val_images/'+img
                 val_imgs.append(img_path)
                 val_labels[img_path]=target  
                 val_labels_tmp.append(target)
@@ -749,15 +750,22 @@ def get_bigdata_tf(dataset_name,random_seed,num_validation):
 def get_bigdata_torch(dataset_name,random_seed,num_validation):
     import torchvision.transforms as transforms      
     train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
-    transform = transforms.Compose([
+    transform_train = transforms.Compose([
+            transforms.Resize((IMG_RESIZED[dataset_name],IMG_RESIZED[dataset_name])),
+            transforms.CenterCrop((IMG_CROPPED[dataset_name],IMG_CROPPED[dataset_name])),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
+        ]) 
+    transform_test = transforms.Compose([
             transforms.Resize((IMG_RESIZED[dataset_name],IMG_RESIZED[dataset_name])),
             transforms.CenterCrop((IMG_CROPPED[dataset_name],IMG_CROPPED[dataset_name])),
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
-        ]) 
-    train_ds = torch_dataset(train_imgs,train_labels,transform,len(class_names))
-    test_ds = torch_dataset(test_imgs,test_labels,transform,len(class_names))
-    val_ds = torch_dataset(val_imgs,val_labels,transform,len(class_names))
+        ])
+    train_ds = torch_dataset(train_imgs,train_labels,transform_train,len(class_names))
+    test_ds = torch_dataset(test_imgs,test_labels,transform_test,len(class_names))
+    val_ds = torch_dataset(val_imgs,val_labels,transform_test,len(class_names))
     return train_ds, val_ds, test_ds, class_names
 
 def get_framework(framework=None):
