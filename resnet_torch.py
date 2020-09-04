@@ -99,6 +99,7 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=1000, type_name='resnet50'):
         self.type_name = type_name
         self.inplanes = 64
+        self.layers = layers
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -165,7 +166,7 @@ class ResNet(nn.Module):
             x = F.threshold(x, 0, 0, inplace=True)
             x = F.max_pool2d(x, kernel_size=3, stride=2, padding=1)
             #layer 1
-            for i in range(3):
+            for i in range(self.layers[0]):
                 residual = x
                 if self.type_name == 'resnet50':
                     out = F.conv2d(x, weights['layer1.%d.conv1.weight'%i], stride=1)
@@ -190,7 +191,7 @@ class ResNet(nn.Module):
                 x = out + residual     
                 x = F.threshold(x, 0, 0, inplace=True)
             #layer 2
-            for i in range(4):
+            for i in range(self.layers[1]):
                 residual = x
                 if self.type_name == 'resnet50':
                     out = F.conv2d(x, weights['layer2.%d.conv1.weight'%i], stride=1)
@@ -217,7 +218,7 @@ class ResNet(nn.Module):
                 x = out + residual  
                 x = F.threshold(x, 0, 0, inplace=True)
             #layer 3
-            for i in range(6):
+            for i in range(self.layers[2]):
                 residual = x
                 if self.type_name == 'resnet50':
                     out = F.conv2d(x, weights['layer3.%d.conv1.weight'%i], stride=1)
@@ -244,7 +245,7 @@ class ResNet(nn.Module):
                 x = out + residual    
                 x = F.threshold(x, 0, 0, inplace=True)       
             #layer 4
-            for i in range(3):
+            for i in range(self.layers[3]):
                 residual = x
                 if self.type_name == 'resnet50':
                     out = F.conv2d(x, weights['layer4.%d.conv1.weight'%i], stride=1)

@@ -366,10 +366,6 @@ class InceptionResNetV2(nn.Module):
         self.avgpool_1a = nn.AvgPool2d(8, count_include_pad=False)
         self.last_linear = nn.Linear(1536, num_classes)
 
-        self.block35 = Block35(scale=0.17)
-        self.block17 = Block17(scale=0.10)
-        self.block8 = Block8(scale=0.20)
-
     def forward(self, input, weights=None, get_feat=None):
         x = self.conv2d_1a(input, weights, 'conv2d_1a')
         x = self.conv2d_2a(x, weights, 'conv2d_2a')
@@ -388,20 +384,23 @@ class InceptionResNetV2(nn.Module):
         if weights == None:
             x = self.repeat(x)
         else:
+            block35 = Block35(scale=0.17).to(torch.device("cuda"))
             for i in range(10):
-                self.block35(x,weights, 'repeat.{}'.format(i))
+                x = block35(x,weights, 'repeat.{}'.format(i))
         x = self.mixed_6a(x, weights)
         if weights == None:
             x = self.repeat_1(x)
         else:
+            block17 = Block17(scale=0.10).to(torch.device("cuda"))
             for i in range(20):
-                self.block17(x,weights, 'repeat_1.{}'.format(i))
+                x = block17(x,weights, 'repeat_1.{}'.format(i))
         x = self.mixed_7a(x, weights)
         if weights == None:
             x = self.repeat_2(x)
         else:
+            block8 = Block8(scale=0.20).to(torch.device("cuda"))
             for i in range(9):
-                self.block8(x,weights, 'repeat_2.{}'.format(i))
+                x = block8(x,weights, 'repeat_2.{}'.format(i))
         x = self.block8(x, weights, 'block8')
         x = self.conv2d_7b(x, weights, 'conv2d_7b')
         if weights == None:

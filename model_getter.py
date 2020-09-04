@@ -24,6 +24,12 @@ def get_model(dataset, framework='pytorch'):
         return resnet50(framework, num_classes = 101, input_shape=(224,224,3))
     elif dataset == 'WebVision':
         return InceptionResNetV2(framework, num_classes = 50)
+        import torch
+        from torch import nn
+        from resnet_torch import resnet50
+        net = resnet50(pretrained=False)
+        net.fc = nn.Linear(2048,50)
+        return net
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced':
         return resnet50(framework, num_classes = 14, input_shape=(224,224,3))
 

@@ -177,7 +177,7 @@ def joint_optimization():
     p = torch.tensor(p, dtype=torch.float).to(device)
     cross_entropy(criterion)
 
-def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lambda2, k):
+def pencil(criterion):
     '''
     2019 - CVPR - Probabilistic End-to-end Noise Correction for Learning with Noisy Labels
     github repo: https://github.com/yikun2019/PENCIL
@@ -189,15 +189,15 @@ def pencil(criterion, alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lam
                      'clothing1M50k':{'alpha':0.08,'beta':0.8, 'stage1':5, 'stage2':10, 'stage3':20, 'type_lr':'two_phase','lambda1':3000, 'lambda2':500, 'k':10},
                      'food101N'     :{'alpha':0.08,'beta':0.8, 'stage1':5, 'stage2':10, 'stage3':20, 'type_lr':'two_phase','lambda1':3000, 'lambda2':500, 'k':10}}
     #set default variables if they are not given from the command line
-    if alpha   == None: alpha   = PARAMS_PENCIL[dataset]['alpha']
-    if beta    == None: beta    = PARAMS_PENCIL[dataset]['beta']
-    if lambda1 == None: lambda1 = PARAMS_PENCIL[dataset]['lambda1']
-    if lambda2 == None: lambda2 = PARAMS_PENCIL[dataset]['lambda2']
-    if type_lr == None: type_lr = PARAMS_PENCIL[dataset]['type_lr']
-    if stage1  == None: stage1  = PARAMS_PENCIL[dataset]['stage1']
-    if stage2  == None: stage2  = PARAMS_PENCIL[dataset]['stage2']
-    if stage3  == None: stage3  = PARAMS_PENCIL[dataset]['stage3']
-    if k       == None: k       = PARAMS_PENCIL[dataset]['k']
+    alpha   = PARAMS_PENCIL[dataset]['alpha']
+    beta    = PARAMS_PENCIL[dataset]['beta']
+    lambda1 = PARAMS_PENCIL[dataset]['lambda1']
+    lambda2 = PARAMS_PENCIL[dataset]['lambda2']
+    type_lr = PARAMS_PENCIL[dataset]['type_lr']
+    stage1  = PARAMS_PENCIL[dataset]['stage1']
+    stage2  = PARAMS_PENCIL[dataset]['stage2']
+    stage3  = PARAMS_PENCIL[dataset]['stage3']
+    k       = PARAMS_PENCIL[dataset]['k']
 
     print('alpha: {}, beta:{}, stage1:{}, stage2:{}, stage3:{}, type_lr:{}, lambda1:{}, lambda2:{}, k:{}'.format(alpha, beta, stage1, stage2, stage3, type_lr, lambda1, lambda2, k))
     
@@ -829,7 +829,7 @@ def main(args):
     elif model_name == 'joint_optimization':
         joint_optimization()
     elif model_name == 'pencil':
-        pencil(criterion, args.alpha, args.beta, args.stage1, args.stage2, args.stage3, args.type_lr, args.lambda1, args.lambda2, args.k)
+        pencil(criterion)
     elif model_name == 'coteaching':
         coteaching(criterion)
     elif model_name == 'mwnet':
@@ -873,29 +873,6 @@ if __name__ == "__main__":
         help="Number of parallel workers to parse dataset")
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
-
-    # PENCIL parameters
-    parser.add_argument('-a', '--alpha', required=False, type=float,
-        help="Alpha parameter")
-    parser.add_argument('-b', '--beta', required=False, type=float,
-        help="Beta paramter")
-    parser.add_argument('-l1', '--lambda1', required=False, type=int,
-        help="Learning rate for meta learning phase")
-    parser.add_argument('-l2', '--lambda2', required=False, type=int,
-        help="Learning rate2 for meta learning phase. Used only when --type is two_phase")
-    parser.add_argument('-t', '--type_lr', required=False, type=str,
-        help='''Meta learning rate scheduler type: 
-                constant - metalearning rate is constant throughout stage2, 
-                linear_decrease - meta learning rate is decreased to 0 throughout stage2
-                two_phase - in first half of stage2 l1 is used and for second half l2''')
-    parser.add_argument('-s1', '--stage1', required=False, type=int,
-        help="Epoch num to end stage1 (straight training)")
-    parser.add_argument('-s2', '--stage2', required=False, type=int,
-        help="Epoch num to end stage2 (meta training)")
-    parser.add_argument('-s3', '--stage3', required=False, type=int,
-        help="Epoch num to end stage3 and full training (finetuning)")
-    parser.add_argument('-k', required=False, type=int, default=10,
-        help="")
 
     args = parser.parse_args()
     # configuration variables

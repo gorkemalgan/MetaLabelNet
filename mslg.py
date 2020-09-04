@@ -30,7 +30,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':4000, 'gamma':1, 'stage
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10},
                'food101N'          :{'alpha':0.5, 'beta':1500, 'gamma':1, 'stage1':1, 'stage2':10, 'k':10}}
 
-def metapencil(alpha, beta, gamma, stage1, stage2, K):
+def mslg(alpha, beta, gamma, stage1, stage2, K):
     def warmup_training():
         loss = criterion_cce(output, labels)
         optimizer.zero_grad()
@@ -219,25 +219,6 @@ def metapencil(alpha, beta, gamma, stage1, stage2, K):
                 summary_writer.add_figure('min_grads', image_grid(idx_min_grad, t_dataset, meta_grads_yy_log), epoch)
             #for tag, parm in net.named_parameters():
             #    summary_writer.add_histogram('grads_'+tag, grads_dict[tag], epoch)
-            if not (noisy_idx is None) and epoch >= stage1 and epoch < stage2:
-                num_noisy = np.sum(noisy_idx)
-                max_grad_idx = np.argsort(meta_grads_yy_log.max(axis=1))[-num_noisy:]
-                num_match = np.sum(noisy_idx[max_grad_idx] == 1)
-                similarity = (num_match / num_noisy)*100
-
-                grad_directions = np.argmax(meta_grads_yy_log, axis=1)
-                num_true_direction = np.sum(grad_directions == clean_labels)
-                true_similarity = (num_true_direction / clean_labels.shape[0])*100
-
-                hard_labels = np.argmax(new_y[meta_epoch+1], axis=1)
-                num_true_pred = np.sum(hard_labels == clean_labels)
-                pred_similarity = (num_true_pred / clean_labels.shape[0])*100
-
-                #print("Gradients in compliance with synthetic noisy data and true data: {:4.1f}%-{:4.1f}%".format(similarity,true_similarity))
-                #print("Correct label percentage: {:4.1f}%".format(pred_similarity))
-                summary_writer.add_scalar('compliance_grad_noisydata', similarity, epoch)
-                summary_writer.add_scalar('compliance_grad_cleandata', true_similarity, epoch)
-                summary_writer.add_scalar('compliance_pred_cleandata', pred_similarity, epoch)
 
         if verbose > 0:
             template = 'Epoch {}, Accuracy(train,meta_train,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Accuracy(top5,top1): {:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Learning rate(lr,yy): {}/{}, Time: {:3.1f}({:3.2f})'
@@ -306,17 +287,8 @@ def image_grid(idx, train_dataset, grads):
         index = idx[i]
         img,l = train_dataset.__getitem__(index)
         # if clean labels are known, print them as well
-        if clean_labels is None:
-            title = '{}/{}\n{:6.3f}'.format(class_names[l], class_names[np.argmax(grads[index])], grads[index].max())
-            color = 'black'
-        else:
-            title = '{}/{}/{}\n{:6.3f}'.format(class_names[clean_labels[index]], class_names[l], class_names[np.argmax(grads[index])], grads[index].max())
-            # if gradient direction is correct
-            if clean_labels[index] == np.argmax(grads[index]):
-                color = 'g'
-            # if gradient direction is wrong
-            else:
-                color = 'r'
+        title = '{}/{}\n{:6.3f}'.format(class_names[l], class_names[np.argmax(grads[index])], grads[index].max())
+        color = 'black'
         # Start next subplot.
         plt.subplot(5, 5, i + 1, title=title)
         ax = plt.gca()
@@ -451,7 +423,7 @@ if __name__ == "__main__":
     # configuration variables
     framework = 'pytorch'
     dataset = args.dataset
-    model_name = 'MLNC'
+    model_name = 'MSLG'
     noise_type = args.noise_type
     noise_ratio = args.noise_ratio/100
     BATCH_SIZE = args.batch_size if args.batch_size != None else PARAMS[dataset]['batch_size']
@@ -479,13 +451,12 @@ if __name__ == "__main__":
     # create necessary folders
     create_folder('{}/dataset'.format(dataset))
     # global variables
-    train_dataset, val_dataset, test_dataset, meta_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,args.seed,args.metadata_num,0)
+    train_dataset, meta_dataset, test_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,args.seed,args.metadata_num)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
     meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
     NUM_METADATA = len(meta_dataset)
     NUM_META_EPOCHS = args.stage2 - args.stage1
-    noisy_idx, clean_labels = get_synthetic_idx(dataset,args.seed,args.metadata_num,0,noise_type,noise_ratio,)
     net = get_model(dataset,framework).to(device)
     if (device.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
@@ -511,5 +482,5 @@ if __name__ == "__main__":
         hp_writer = SummaryWriter(log_dir_hp)
     
     start_train = time.time()
-    metapencil(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.k)
+    mslg(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.k)
     print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))

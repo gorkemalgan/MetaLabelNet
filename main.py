@@ -29,7 +29,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':8, 'stage2':20}}
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':20}}
 
 def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
     def warmup_training(model_s1_path):
@@ -109,7 +109,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         lc = criterion_meta(output, yy)                                            # classification loss
         # train for classification loss with meta-learning
         net.zero_grad()
-        grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True, allow_unused=True)
+        grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True)
         grads = [grad for grad in grads if grad is not None]
         for grad in grads:
             grad.detach()
@@ -250,15 +250,15 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Hyper-params(alpha,beta,gamma,c,k,p1,p2): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num meta-data: {}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,
+                                    label_similarity.percentage, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,RANDOM_SEED,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}/{},Hyper-params(alpha,beta,gamma,c,k,p1,p2): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2,RANDOM_SEED))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
@@ -472,18 +472,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
             super(MetaNet, self).__init__()
             layer1_size = input
             layer2_size = int(input/2)
-            self.linear1 = nn.Linear(layer1_size, layer1_size)
-            self.linear2 = nn.Linear(layer1_size, layer2_size)
-            self.linear3 = nn.Linear(layer2_size, output)
-            self.bn1 = nn.BatchNorm1d(layer1_size)
-            self.bn2 = nn.BatchNorm1d(layer2_size)
+            self.linear3 = nn.Linear(input, output)
+            #self.linear1 = nn.Linear(layer1_size, layer1_size)
+            #self.linear2 = nn.Linear(layer1_size, layer2_size)
+            #self.linear3 = nn.Linear(layer2_size, output)
+            #self.bn1 = nn.BatchNorm1d(layer1_size)
+            #self.bn2 = nn.BatchNorm1d(layer2_size)
         def forward(self, x):
-            x = F.relu(self.bn1(self.linear1(x)))
-            x = F.relu(self.bn2(self.linear2(x)))
+            #x = F.relu(self.bn1(self.linear1(x)))
+            #x = F.relu(self.bn2(self.linear2(x)))
             out = self.linear3(x)
             return softmax(out)
     meta_net = MetaNet(NUM_FEATURES, NUM_CLASSES).to(DEVICE)
-    optimizer_meta_net = torch.optim.Adam(meta_net.parameters(), beta, weight_decay=1e-4)
+    optimizer_meta_net = torch.optim.Adam(meta_net.parameters(), beta, weight_decay=1e-4)#optim.SGD(meta_net.parameters(), lr=beta, momentum=0.9, weight_decay=1e-4)
     meta_net.train()
 
     # get datasets
@@ -746,6 +747,7 @@ if __name__ == "__main__":
     feature_encoder = get_model(DATASET,FRAMEWORK).to(DEVICE)
     if (DEVICE.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
+        feature_encoder = nn.DataParallel(feature_encoder, list(range(ngpu)))
     lr_scheduler = get_lr_scheduler(DATASET)
     optimizer = optim.SGD(net.parameters(), lr=lr_scheduler(0), momentum=0.9, weight_decay=1e-4)
     logsoftmax = nn.LogSoftmax(dim=1).to(DEVICE)
@@ -758,9 +760,9 @@ if __name__ == "__main__":
 
     # if logging
     if SAVE_LOGS == 1:
-        base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(NOISE_RATIO) + '/' + MODEL_NAME
+        base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.noise_ratio) + '/' + MODEL_NAME
         if args.clean_data_type == 'validation':
-            log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
+            log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, RANDOM_SEED, current_time)
         else:
             log_folder = args.folder_log if args.folder_log else 'c{}_k{}_p{}-{}_a{}_b{}_g{}_s{}_m{}_{}'.format(args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
