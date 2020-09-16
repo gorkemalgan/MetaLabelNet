@@ -2,8 +2,8 @@ DATASETS_SMALL = ['mnist_fashion','cifar10','cifar100']
 DATASETS_BIG = ['food101N', 'clothing1M', 'clothing1M50k', 'clothing1Mbalanced', 'WebVision']
 DATASETS = DATASETS_SMALL + DATASETS_BIG
 
-IMG_RESIZED = {'food101N':256, 'clothing1M':256, 'clothing1M50k':256, 'clothing1Mbalanced':256, 'WebVision':320}
-IMG_CROPPED = {'food101N':224, 'clothing1M':224, 'clothing1M50k':224, 'clothing1Mbalanced':224, 'WebVision':299}
+IMG_RESIZED = {'food101N':256, 'clothing1M':256, 'clothing1M50k':256, 'clothing1Mbalanced':256, 'WebVision':256}
+IMG_CROPPED = {'food101N':224, 'clothing1M':224, 'clothing1M50k':224, 'clothing1Mbalanced':224, 'WebVision':224}
 
 import numpy as np
 import os, sys
@@ -330,14 +330,14 @@ def get_cm(dataset_name, noise_type, noise_ratio, framework=None):
         P /= P.sum(axis=1)
     return P
 
-def get_synthetic_idx(dataset_name,seed,num_validation,noise_type,noise_ratio):
+def get_synthetic_idx(dataset_name,seed,num_validation,num_unlabeled,noise_type,noise_ratio):
     if dataset_name in DATASETS_SMALL:
-        _, y_clean, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, 0,0)
-        _, y_noisy, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,noise_type, noise_ratio,0)
+        _, y_clean, _, _, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,num_unlabeled,noise_type, 0,0)
+        _, y_noisy, _, _, _, _, _, _, _ = get_smalldata(dataset_name,seed,num_validation,num_unlabeled,noise_type, noise_ratio,0)
         return np.where(y_clean != y_noisy)[0], np.where(y_clean == y_noisy)[0] , y_clean
     return None,None,None
 
-def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature-dependent', noise_ratio=0, verbose=1):
+def get_smalldata(dataset_name, random_seed, num_validation, num_unlabeled, noise_type='feature-dependent', noise_ratio=0, verbose=1):
     assert dataset_name in DATASETS_SMALL, 'invalid dataset name!'
     import gzip
     import pickle
@@ -511,11 +511,12 @@ def get_smalldata(dataset_name, random_seed, num_validation, noise_type='feature
             x_val, y_val = x, y
         else:
             x, x_val, y, y_val = train_test_split(x, y, test_size=num_validation, random_state=random_seed)
-    # add remaining data to training data
-    #if x.shape[0] > 0:
-    #    x_train, y_train = np.concatenate((x_train, x)), np.concatenate((y_train, y))
+    # split data for unlabeled data if there is any required
+    x_unlabeled, y_unlabeled = None, None
+    if num_unlabeled != 0:
+        x_train, x_unlabeled, y_train, y_unlabeled = train_test_split(x_train, y_train, test_size=num_unlabeled, random_state=random_seed)
 
-    return x_train, y_train, x_val, y_val, x_test, y_test, class_names
+    return x_train, y_train, x_val, y_val, x_test, y_test, x_unlabeled, y_unlabeled, class_names
 
 def get_bigdata_lists(dataset_name,random_seed,num_validation):
     from sklearn.model_selection import train_test_split
@@ -588,7 +589,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, None, None, class_names
     elif dataset_name == 'clothing1M' or dataset_name == 'clothing1M50k' or dataset_name == 'clothing1Mbalanced':
         data_dir = 'clothing1M/dataset/'
         class_names = ['T-Shirt','Shirt','Knitwear','Chiffon','Sweater','Hoodie','Windbreaker','Jacket','Downcoat','Suit','Shawl','Dress','Vest','Underwear']
@@ -636,6 +637,8 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                 train_labels[img_path] = int(entry[1])
 
         if dataset_name == 'clothing1Mbalanced':
+            unlabeled_imgs  = []
+            unlabeled_labels = {}
             from collections import Counter
             # find class with minimum num of samples
             min_samples = 1000000
@@ -653,8 +656,14 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                     train_imgs2.append(img)
                     train_labels2[img] = label
                     class_counts[label] += 1
+                else:
+                    unlabeled_imgs.append(img)
+                    unlabeled_labels[img] = label
             train_imgs = train_imgs2
             train_labels = train_labels2
+        else:
+            unlabeled_imgs  = None
+            unlabeled_labels = None
             
         if num_validation != None:
             val_imgs_tmp = []
@@ -666,7 +675,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, class_names
+        return train_imgs, train_labels, val_imgs, test_labels, test_imgs, test_labels, unlabeled_imgs, unlabeled_labels, class_names
     if dataset_name == 'WebVision': 
         data_dir = 'WebVision/dataset/'
         num_classes = 50
@@ -700,7 +709,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
             test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=1000, random_state=random_seed) 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, val_labels, class_names
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, val_labels, None, None, class_names
 
 def get_bigdata_tf(dataset_name,random_seed,num_validation):
     import tensorflow as tf
@@ -749,7 +758,7 @@ def get_bigdata_tf(dataset_name,random_seed,num_validation):
 
 def get_bigdata_torch(dataset_name,random_seed,num_validation):
     import torchvision.transforms as transforms      
-    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
+    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, unlabeled_imgs, unlabeled_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
     transform_train = transforms.Compose([
             transforms.Resize((IMG_RESIZED[dataset_name],IMG_RESIZED[dataset_name])),
             transforms.CenterCrop((IMG_CROPPED[dataset_name],IMG_CROPPED[dataset_name])),
@@ -766,7 +775,11 @@ def get_bigdata_torch(dataset_name,random_seed,num_validation):
     train_ds = torch_dataset(train_imgs,train_labels,transform_train,len(class_names))
     test_ds = torch_dataset(test_imgs,test_labels,transform_test,len(class_names))
     val_ds = torch_dataset(val_imgs,val_labels,transform_test,len(class_names))
-    return train_ds, val_ds, test_ds, class_names
+    if unlabeled_imgs is None:
+        unlabeled_ds = None
+    else:
+        unlabeled_ds = torch_dataset(unlabeled_imgs, unlabeled_labels,transform_test,len(class_names))
+    return train_ds, val_ds, test_ds, unlabeled_ds, class_names
 
 def get_framework(framework=None):
     # get the installed framework. either tensorflow or pytorch
@@ -816,14 +829,14 @@ def get_smalldata_transform_func(framework, dataset_name):
         else:
             return transformfunc
 
-def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_validation=None,verbose=1):
+def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_validation=None, num_unlabeled=0, verbose=1):
     assert dataset_name in DATASETS, 'invalid dataset name!'
 
     framework = get_framework(framework)
     download_data(dataset_name)
 
     if dataset_name in DATASETS_SMALL:
-        x_train, y_train, x_val, y_val, x_test, y_test, class_names = get_smalldata(dataset_name,random_seed,num_validation,noise_type,noise_ratio,verbose)
+        x_train, y_train, x_val, y_val, x_test, y_test, x_unlabeled, y_unlabeled, class_names = get_smalldata(dataset_name,random_seed,num_validation,num_unlabeled,noise_type,noise_ratio,verbose)
         transorm_func = get_smalldata_transform_func(framework, dataset_name)
         if framework == 'tensorflow':
             import tensorflow as tf
@@ -834,7 +847,11 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
             train_dataset = CustomTensorDataset(x_train, y_train, transform=transorm_func)
             test_dataset = CustomTensorDataset(x_test, y_test, transform=None)
             val_dataset = CustomTensorDataset(x_val, y_val, transform=None)
-        return train_dataset, val_dataset, test_dataset, class_names
+            if x_unlabeled is None:
+                unlabeled_dataset = None
+            else:
+                unlabeled_dataset = CustomTensorDataset(x_unlabeled, y_unlabeled, transform=None)
+        return train_dataset, val_dataset, test_dataset, unlabeled_dataset, class_names
     else:
         if framework == 'tensorflow':
             return get_bigdata_tf(dataset_name,random_seed,num_validation)
@@ -843,7 +860,7 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
 
 def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2):
     framework = get_framework(framework)
-    train_dataset, val_dataset, test_dataset, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed)
+    train_dataset, val_dataset, test_dataset, _, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed)
     if framework == 'tensorflow':
         train_dataloader = train_dataset.batch(batch_size)
         test_dataloader = test_dataset.batch(batch_size)

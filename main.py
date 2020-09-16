@@ -29,7 +29,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':20}}
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':40}}
 
 def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
     def warmup_training(model_s1_path):
@@ -103,10 +103,9 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                 summary_writer.add_scalar('val_accuracy', val_accuracy, stage1-1)
                 summary_writer.add_scalar('topk_accuracy', topk_accuracy, stage1-1)
 
-    def meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats):
-        meta_net.train()
+    def meta_loss(output, yy, images_meta, labels_meta):
         # meta training for predicted labels
-        lc = criterion_meta(output, yy)                                            # classification loss
+        lc = criterion_meta(output, yy)                                 # classification loss
         # train for classification loss with meta-learning
         net.zero_grad()
         grads = torch.autograd.grad(lc, net.parameters(), create_graph=True, retain_graph=True, only_inputs=True)
@@ -115,22 +114,9 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
             grad.detach()
         fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
+        return criterion_cce(fast_out, labels_meta)
 
-        loss_meta = criterion_cce(fast_out, labels_meta)
-        loss_compatibility = criterion_cce(yy, labels)
-        loss_all = loss_meta + gamma*loss_compatibility
-
-        optimizer_meta_net.zero_grad()
-        meta_net.zero_grad()
-        loss_all.backward(retain_graph=True)
-        optimizer_meta_net.step()
-
-        # update labels
-        meta_net.eval()
-        _yy = meta_net(feats).detach()
-        new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
-        del grads
-
+    def conventional_train(output, _yy):
         # training base network
         lc = criterion_meta(output, _yy)                                # classification loss
         le = -torch.mean(torch.mul(softmax(output), logsoftmax(output)))# entropy loss
@@ -139,11 +125,9 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         net.zero_grad()
         loss.backward()
         optimizer.step()
-        meta_net.train()
-        
         return loss
 
-    def meta_training():
+    def train():
         # initialize parameters and buffers
         t_meta_loader_iter = iter(m_dataloader) 
         labels_yy = np.zeros(NUM_TRAINDATA)
@@ -172,51 +156,91 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                 # training images and labels
                 images, labels = images.to(DEVICE), labels.to(DEVICE)
                 images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+                size_of_batch = labels.size(0)
 
                 # compute output
                 output, _ = net(images,get_feat=True)
                 _, predicted = torch.max(output.data, 1)
+                train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), size_of_batch) 
 
-                # predict labels
+                # predict initial soft labels labels
+                meta_net.eval()
                 if DATASET == 'clothing1M':
                     _, feats = feature_encoder(images,get_feat=True)
                 else:
                     feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
                 yy = meta_net(feats)
                 _, labels_yy[index] = torch.max(yy.cpu(), 1)
-                # meta training images and labels
-                try:
-                    images_meta, labels_meta = next(t_meta_loader_iter)
-                except StopIteration:
-                    t_meta_loader_iter = iter(m_dataloader)
-                    images_meta, labels_meta = next(t_meta_loader_iter)
-                    images_meta, labels_meta = images_meta[:labels.size(0)], labels_meta[:labels.size(0)]
-                images_meta, labels_meta = images_meta.to(DEVICE), labels_meta.to(DEVICE)
-                images_meta, labels_meta = torch.autograd.Variable(images_meta), torch.autograd.Variable(labels_meta)
-                
-                #with torch.autograd.detect_anomaly():
-                loss = meta_training_loop(meta_epoch, index, output, labels, yy, images_meta, labels_meta, feats)
-
-                train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), labels.size(0)) 
-                train_loss.update(loss.item())
                 train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
-                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), labels.size(0))
+                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
 
+                # meta-network training
+                #with torch.autograd.detect_anomaly():
+                meta_net.train()
+                meta_net.zero_grad()
+                optimizer_meta_net.zero_grad()
+                loss_compatibility = gamma*criterion_cce(yy, labels)
+                loss_compatibility.backward(retain_graph=True)
+                if DATASET in DATASETS_BIG:
+                    del images,labels,loss_compatibility
+                    torch.cuda.empty_cache()
+                for _ in range(NUM_META_ITER):
+                    images_meta, labels_meta, t_meta_loader_iter = get_batch(m_dataloader,t_meta_loader_iter,size_of_batch)
+                    loss_meta = meta_loss(output, yy, images_meta, labels_meta)/NUM_META_ITER
+                    loss_meta.backward(retain_graph=True)
+                    if DATASET in DATASETS_BIG:
+                        del images_meta,labels_meta, loss_meta
+                        torch.cuda.empty_cache()
+                optimizer_meta_net.step()
                 # keep log of gradients
                 for tag, parm in meta_net.named_parameters():
                     if parm.grad != None:
                         grads_dict[tag] += parm.grad.data.cpu().numpy()
-                del feats
-                gc.collect()
+
+                if SEPERATED_STAGE == 0:
+                    # conventional training
+                    meta_net.eval()
+                    _yy = meta_net(feats).detach()
+                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
+                    loss = conventional_train(output, _yy)
+                    train_loss.update(loss.item())
 
                 if VERBOSE == 2:
-                    template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Loss: {:5.4f}, Process time:{:5.4f}   \r"
-                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, train_loss.avg, time.time()-start))
+                    template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Process time:{:5.4f}   \r"
+                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, time.time()-start))
             if VERBOSE == 2:
-                sys.stdout.flush()           
+                sys.stdout.flush()  
 
-            if SAVE_LOGS == 1:
-                np.save(log_dir + "y.npy", new_y)
+            if SEPERATED_STAGE == 1:
+                meta_net.eval()
+                for batch_idx, (images, labels) in enumerate(t_dataloader):  
+                    index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
+                    images, labels = images.to(DEVICE), labels.to(DEVICE)     
+                    # conventional training
+                    if DATASET == 'clothing1M':
+                        _, feats = feature_encoder(images,get_feat=True)
+                    else:
+                        feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
+                    _yy = meta_net(feats).detach()
+                    output, _ = net(images,get_feat=True)
+                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
+                    loss = conventional_train(output, _yy)
+                    train_loss.update(loss.item())    
+
+            # train on unlabeled dataset
+            if not (u_dataloader is None):
+                meta_net.eval()
+                for batch_idx, (images, labels) in enumerate(u_dataloader):  
+                    index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
+                    images, labels = images.to(DEVICE), labels.to(DEVICE)     
+                    # conventional training
+                    _, feats = feature_encoder(images,get_feat=True)
+                    _yy = meta_net(feats).detach()
+                    output, _ = net(images,get_feat=True)
+                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
+                    loss = conventional_train(output, _yy)
+                    train_loss.update(loss.item())   
+                
             # evaluate on validation and test data
             val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
             test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion_cce)
@@ -227,6 +251,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                 topk_acc_best = topk_accuracy
 
             if SAVE_LOGS == 1:
+                np.save(log_dir + "y.npy", new_y)
                 summary_writer.add_scalar('train_loss', train_loss.avg, epoch)
                 summary_writer.add_scalar('test_loss', test_loss, epoch)
                 summary_writer.add_scalar('train_accuracy', train_accuracy.percentage, epoch)
@@ -250,19 +275,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num meta-data: {}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed,miter,sstage): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}/{}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,RANDOM_SEED,
+                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,RANDOM_SEED,NUM_META_ITER,SEPERATED_STAGE,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num meta-data: {}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2,RANDOM_SEED))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed,miter,sstage): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}/{}/{}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2,RANDOM_SEED,NUM_META_ITER,SEPERATED_STAGE))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA}, 
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED, 'meta_iter':NUM_META_ITER, 'sep_stage':SEPERATED_STAGE}, 
                                   {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -465,19 +490,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         m_dataloader = torch.utils.data.DataLoader(m_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers, drop_last=True)
         return t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true
 
-    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2))
+    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, meta_iter:{}, sep_stage: {}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2, NUM_META_ITER, SEPERATED_STAGE))
 
     class MetaNet(nn.Module):
         def __init__(self, input, output):
             super(MetaNet, self).__init__()
-            layer1_size = input
-            layer2_size = int(input/2)
-            self.linear3 = nn.Linear(input, output)
+            #layer1_size = input
+            #layer2_size = int(input/2)
             #self.linear1 = nn.Linear(layer1_size, layer1_size)
             #self.linear2 = nn.Linear(layer1_size, layer2_size)
             #self.linear3 = nn.Linear(layer2_size, output)
             #self.bn1 = nn.BatchNorm1d(layer1_size)
             #self.bn2 = nn.BatchNorm1d(layer2_size)
+            self.linear3 = nn.Linear(input, output)
         def forward(self, x):
             #x = F.relu(self.bn1(self.linear1(x)))
             #x = F.relu(self.bn2(self.linear2(x)))
@@ -488,7 +513,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     meta_net.train()
 
     # get datasets
-    t_dataset, m_dataset, t_dataloader, m_dataloader = train_dataset, meta_dataset, train_dataloader, meta_dataloader
+    t_dataset, m_dataset, t_dataloader, m_dataloader, u_dataset, u_dataloader = train_dataset, meta_dataset, train_dataloader, meta_dataloader, unlabeled_dataset, unlabeled_dataloader
     n_idx, c_labels = noisy_idx, clean_labels
     meta_true = None
     NUM_TRAINDATA = len(t_dataset)
@@ -539,7 +564,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     if DATASET != 'clothing1M':    # due to memory limit dont use precomputed features
         features, _, _ = extract_features(features_path,losses_path) 
     # meta training
-    meta_training()
+    train()
 
 def image_grid(idx, train_dataset, grads):
     """Return a 5x5 grid of the MNIST images as a matplotlib figure."""
@@ -578,6 +603,17 @@ def image_grid(idx, train_dataset, grads):
 def set_learningrate(optimizer, lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
+def get_batch(dataloader,dataloader_iter,batch_size):
+    try:
+        images, labels = next(dataloader_iter)
+    except StopIteration:
+        dataloader_iter = iter(dataloader)
+        images, labels = next(dataloader_iter)
+    images, labels = images[:batch_size], labels[:batch_size]
+    images, labels = images.to(DEVICE), labels.to(DEVICE)
+    images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+    return images, labels, dataloader_iter
 
 def evaluate(net, dataloader, criterion):
     if dataloader:
@@ -663,7 +699,7 @@ if __name__ == "__main__":
         help="Number of parallel workers to parse dataset")
     parser.add_argument('--save_logs', required=False, type=int, default=1,
         help="Either to save log files (1) or not (0)")
-    parser.add_argument('-u', '--use_saved', required=False, type=int, default=1,
+    parser.add_argument('--use_saved', required=False, type=int, default=1,
         help="Either to use presaved files (1) or not (0)")
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
@@ -672,6 +708,8 @@ if __name__ == "__main__":
         help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
     parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
         help="Number of samples to be used as meta-data")
+    parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
+        help="Number of samples to be used as unlabeled-data")
     parser.add_argument('-k', '--kmeans_clusternum', required=False, type=int, default=10,
         help="Number of kmeans clusters")
     parser.add_argument('-p', '--percentage_consider', required=False, type=float, default=0.5,
@@ -689,7 +727,11 @@ if __name__ == "__main__":
         help="Epoch num to end stage1 (straight training)")
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
-
+    parser.add_argument('-t', '--meta_iter', required=False, type=int, default=1,
+        help="Meta iteration number")
+    parser.add_argument('--sep_stage', required=False, type=int, default=0,
+        help="Whether to perform conventional training at each batch (0) or after the end of all batchs (1)")
+    
     args = parser.parse_args()
     #set default variables if they are not given from the command line
     if args.alpha == None: args.alpha = PARAMS_META[args.dataset]['alpha']
@@ -707,6 +749,9 @@ if __name__ == "__main__":
     NUM_CLASSES = PARAMS[DATASET]['num_classes']
     NUM_FEATURES = PARAMS[DATASET]['num_features']
     NUM_META_EPOCHS = args.stage2 - args.stage1
+    NUM_META_ITER = args.meta_iter
+    NUM_METADATA = args.metadata_num
+    SEPERATED_STAGE = args.sep_stage
     SAVE_LOGS = args.save_logs
     USE_SAVED = args.use_saved
     RANDOM_SEED = args.seed
@@ -732,17 +777,22 @@ if __name__ == "__main__":
     create_folder('{}/dataset'.format(DATASET))
     # global variables
     if args.clean_data_type != 'validation':
-        train_dataset, meta_dataset, test_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,verbose=VERBOSE)
-        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,None,NOISE_TYPE,NOISE_RATIO)
+        train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,verbose=VERBOSE)
+        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,None,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
         meta_dataloader = None
     else:
-        train_dataset, meta_dataset, test_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,args.metadata_num,verbose=VERBOSE)
-        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,NOISE_TYPE,NOISE_RATIO)
+        train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,NUM_METADATA,args.unlabeleddata_num,verbose=VERBOSE)
+        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
         meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
+    if unlabeled_dataset is None:
+        unlabeled_dataloader = None
+        NUM_UNLABELED = 0
+    else:
+        unlabeled_dataloader = torch.utils.data.DataLoader(unlabeled_dataset,batch_size=BATCH_SIZE,shuffle=True)
+        NUM_UNLABELED = len(unlabeled_dataset)
     
-    NUM_METADATA = args.metadata_num
     net = get_model(DATASET,FRAMEWORK).to(DEVICE)
     feature_encoder = get_model(DATASET,FRAMEWORK).to(DEVICE)
     if (DEVICE.type == 'cuda') and (ngpu > 1):
@@ -762,9 +812,9 @@ if __name__ == "__main__":
     if SAVE_LOGS == 1:
         base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.noise_ratio) + '/' + MODEL_NAME
         if args.clean_data_type == 'validation':
-            log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, RANDOM_SEED, current_time)
+            log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_mi{}_ss{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, NUM_META_ITER, SEPERATED_STAGE, current_time)
         else:
-            log_folder = args.folder_log if args.folder_log else 'c{}_k{}_p{}-{}_a{}_b{}_g{}_s{}_m{}_{}'.format(args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, current_time)
+            log_folder = args.folder_log if args.folder_log else 'c{}_k{}_p{}-{}_a{}_b{}_g{}_s{}_m{}_u{}_sd{}_mi{}_ss{}_{}'.format(args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, NUM_META_ITER, SEPERATED_STAGE, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
         log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)

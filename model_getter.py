@@ -19,19 +19,14 @@ def get_model(dataset, framework='pytorch'):
     elif dataset == 'cifar10':
         return model_cifar10(framework)
     elif dataset == 'cifar100':
-        return resnet34(framework, num_classes = 100, input_shape=(32,32,3))
+        return resnet34(framework, num_classes = 100)
     elif dataset == 'food101N':
-        return resnet50(framework, num_classes = 101, input_shape=(224,224,3))
+        return resnet50(framework, num_classes = 101)
     elif dataset == 'WebVision':
         return InceptionResNetV2(framework, num_classes = 50)
-        import torch
-        from torch import nn
-        from resnet_torch import resnet50
-        net = resnet50(pretrained=False)
-        net.fc = nn.Linear(2048,50)
-        return net
+        #return resnet101(framework, num_classes = 50, pretrained=False)
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced':
-        return resnet50(framework, num_classes = 14, input_shape=(224,224,3))
+        return resnet50(framework, num_classes = 14)
 
 def model_mnistfashion(framework):
     if framework == 'pytorch':
@@ -97,14 +92,30 @@ def model_mnistfashion(framework):
         # Create model
         return Model(img_input, x) 
 
-def resnet34(framework, num_classes, input_shape):
+def resnet18(framework, num_classes, pretrained=True):
+    import os
+    if framework == 'pytorch':
+        import torch
+        from torch import nn
+        from resnet_torch import resnet18
+        try:
+            net = resnet18(pretrained=pretrained)
+        except:
+            net = resnet18(pretrained=False)
+            net.load_state_dict(torch.load('resnet18.pt'))
+        net.fc = nn.Linear(512,num_classes)
+        return net
+    elif framework == 'tensorflow':
+        return None
+
+def resnet34(framework, num_classes, pretrained=True):
     import os
     if framework == 'pytorch':
         import torch
         from torch import nn
         from resnet_torch import resnet34
         try:
-            net = resnet34(pretrained=True)
+            net = resnet34(pretrained=pretrained)
         except:
             net = resnet34(pretrained=False)
             net.load_state_dict(torch.load('resnet34.pt'))
@@ -113,14 +124,14 @@ def resnet34(framework, num_classes, input_shape):
     elif framework == 'tensorflow':
         return None
 
-def resnet50(framework, num_classes, input_shape):
+def resnet50(framework, num_classes, pretrained=True):
     import os
     if framework == 'pytorch':
         import torch
         from torch import nn
         from resnet_torch import resnet50
         try:
-            net = resnet50(pretrained=True)
+            net = resnet50(pretrained=pretrained)
         except:
             net = resnet50(pretrained=False)
             net.load_state_dict(torch.load('resnet50.pt'))
@@ -132,6 +143,22 @@ def resnet50(framework, num_classes, input_shape):
         model = tf.keras.applications.resnet.ResNet50(include_top=False, weights='imagenet', input_shape=(224, 224, 3), pooling='avg')
         output = tf.keras.layers.Dense(num_classes)(model.layers[-1].output)
         return tf.keras.models.Model(model.input, outputs=output)
+
+def resnet101(framework, num_classes, pretrained=True):
+    import os
+    if framework == 'pytorch':
+        import torch
+        from torch import nn
+        from resnet_torch import resnet101
+        try:
+            net = resnet101(pretrained=pretrained)
+        except:
+            net = resnet101(pretrained=False)
+            net.load_state_dict(torch.load('resnet101.pt'))
+        net.fc = nn.Linear(2048,num_classes)
+        return net
+    elif framework == 'tensorflow':
+        return None
 
 def InceptionResNetV2(framework, num_classes):
     import os

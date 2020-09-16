@@ -838,7 +838,7 @@ def main(args):
         consistent_criterion = nn.KLDivLoss()
         mlnt(criterion, consistent_criterion)
 
-    print('Totail training duration: {:3.2f}h'.format((time.time()-start_train)/3600))
+    print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))
 
 if __name__ == "__main__":
     import argparse
