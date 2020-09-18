@@ -29,7 +29,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':40}}
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':7,'stage2':40}}
 
 def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
     def warmup_training(model_s1_path):
@@ -149,78 +149,87 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
             meta_net.train()
             grads_dict = OrderedDict((name, 0) for (name, param) in meta_net.named_parameters()) 
 
-            for batch_idx, (images, labels) in enumerate(t_dataloader):
-                start = time.time()
-                index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-                
-                # training images and labels
-                images, labels = images.to(DEVICE), labels.to(DEVICE)
-                images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
-                size_of_batch = labels.size(0)
+            dl_dict = {'labeled':t_dataloader, 'unlabeled':u_dataloader}
+            for data_type in dl_dict:
+                dl = dl_dict[data_type]
+                if not (dl is None):
+                    for batch_idx, (images, labels) in enumerate(dl):
+                        start = time.time()
+                        index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+                        
+                        # training images and labels
+                        images, labels = images.to(DEVICE), labels.to(DEVICE)
+                        images, labels = torch.autograd.Variable(images), torch.autograd.Variable(labels)
+                        size_of_batch = labels.size(0)
 
-                # compute output
-                output, _ = net(images,get_feat=True)
-                _, predicted = torch.max(output.data, 1)
-                train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), size_of_batch) 
+                        # compute output
+                        output, _ = net(images,get_feat=True)
+                        _, predicted = torch.max(output.data, 1)
+                        train_accuracy.update(predicted.eq(labels.data).cpu().sum().item(), size_of_batch) 
 
-                # predict initial soft labels labels
-                meta_net.eval()
-                if DATASET == 'clothing1M':
-                    _, feats = feature_encoder(images,get_feat=True)
-                else:
-                    feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
-                yy = meta_net(feats)
-                _, labels_yy[index] = torch.max(yy.cpu(), 1)
-                train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
-                label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
+                        # predict initial soft labels labels
+                        meta_net.eval()
+                        _, feats = feature_encoder(images,get_feat=True)
+                        yy = meta_net(feats)
+                        _, labels_yy[index] = torch.max(yy.cpu(), 1)
+                        train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
+                        label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
 
-                # meta-network training
-                #with torch.autograd.detect_anomaly():
-                meta_net.train()
-                meta_net.zero_grad()
-                optimizer_meta_net.zero_grad()
-                loss_compatibility = gamma*criterion_cce(yy, labels)
-                loss_compatibility.backward(retain_graph=True)
-                if DATASET in DATASETS_BIG:
-                    del images,labels,loss_compatibility
-                    torch.cuda.empty_cache()
-                for _ in range(NUM_META_ITER):
-                    images_meta, labels_meta, t_meta_loader_iter = get_batch(m_dataloader,t_meta_loader_iter,size_of_batch)
-                    loss_meta = meta_loss(output, yy, images_meta, labels_meta)/NUM_META_ITER
-                    loss_meta.backward(retain_graph=True)
-                    if DATASET in DATASETS_BIG:
-                        del images_meta,labels_meta, loss_meta
-                        torch.cuda.empty_cache()
-                optimizer_meta_net.step()
-                # keep log of gradients
-                for tag, parm in meta_net.named_parameters():
-                    if parm.grad != None:
-                        grads_dict[tag] += parm.grad.data.cpu().numpy()
+                        # meta-network training
+                        #with torch.autograd.detect_anomaly():
+                        meta_net.train()
+                        meta_net.zero_grad()
+                        optimizer_meta_net.zero_grad()
+                        metanet_state = meta_net.state_dict()
+                        # dont compute compatibility loss for unlabeled data
+                        if data_type == 'labeled':
+                            loss_compatibility = gamma*criterion_cce(yy, labels)
+                            loss_compatibility.backward(retain_graph=True)
+                            if DATASET in DATASETS_BIG:#== 'WebVision':
+                                del images,labels,loss_compatibility
+                                gc.collect()
+                                #torch.cuda.empty_cache()
+                        for _ in range(NUM_META_ITER):
+                            images_meta, labels_meta, t_meta_loader_iter = get_batch(m_dataloader,t_meta_loader_iter,size_of_batch)
+                            loss_meta = meta_loss(output, yy, images_meta, labels_meta)/NUM_META_ITER
+                            loss_meta.backward(retain_graph=True)
+                            if DATASET in DATASETS_BIG:# == 'WebVision':
+                                del images_meta,labels_meta, loss_meta
+                                gc.collect()
+                                #torch.cuda.empty_cache()
+                        optimizer_meta_net.step()
+                        # keep log of gradients
+                        for tag, parm in meta_net.named_parameters():
+                            if parm.grad != None:
+                                grads_dict[tag] += parm.grad.data.cpu().numpy()
 
-                if SEPERATED_STAGE == 0:
-                    # conventional training
-                    meta_net.eval()
-                    _yy = meta_net(feats).detach()
-                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
-                    loss = conventional_train(output, _yy)
-                    train_loss.update(loss.item())
+                        if SEPERATED_STAGE == 0:
+                            # conventional training
+                            meta_net.eval()
+                            _yy = meta_net(feats).detach()
+                            new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
+                            loss = conventional_train(output, _yy)
+                            train_loss.update(loss.item())
+                        del feats, yy
 
-                if VERBOSE == 2:
-                    template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Process time:{:5.4f}   \r"
-                    sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, time.time()-start))
+                        # dont train metanet on unlabeled data
+                        #if data_type == 'unlabeled':
+                        #    meta_net.load_state_dict(metanet_state) 
+
+                        if VERBOSE == 2:
+                            template = "Progress: {:6.5f}, Accuracy: {:5.4f}, Accuracy Meta: {:5.4f}, Process time:{:5.4f}   \r"
+                            sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, time.time()-start))
             if VERBOSE == 2:
                 sys.stdout.flush()  
 
             if SEPERATED_STAGE == 1:
+                # conventional training
                 meta_net.eval()
                 for batch_idx, (images, labels) in enumerate(t_dataloader):  
                     index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
                     images, labels = images.to(DEVICE), labels.to(DEVICE)     
                     # conventional training
-                    if DATASET == 'clothing1M':
-                        _, feats = feature_encoder(images,get_feat=True)
-                    else:
-                        feats = torch.tensor(features[index], dtype=torch.float, device=DEVICE)
+                    _, feats = feature_encoder(images,get_feat=True)
                     _yy = meta_net(feats).detach()
                     output, _ = net(images,get_feat=True)
                     new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
@@ -228,18 +237,15 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                     train_loss.update(loss.item())    
 
             # train on unlabeled dataset
-            if not (u_dataloader is None):
-                meta_net.eval()
-                for batch_idx, (images, labels) in enumerate(u_dataloader):  
-                    index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
-                    images, labels = images.to(DEVICE), labels.to(DEVICE)     
-                    # conventional training
-                    _, feats = feature_encoder(images,get_feat=True)
-                    _yy = meta_net(feats).detach()
-                    output, _ = net(images,get_feat=True)
-                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
-                    loss = conventional_train(output, _yy)
-                    train_loss.update(loss.item())   
+            #if not (u_dataloader is None):
+            #    meta_net.eval()
+            #    for batch_idx, (images, labels) in enumerate(u_dataloader):  
+            #        index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
+            #        images, labels = images.to(DEVICE), labels.to(DEVICE)     
+            #        _, feats = feature_encoder(images,get_feat=True)
+            #        _yy = meta_net(feats).detach()
+            #        output, _ = net(images,get_feat=True)
+            #        loss = conventional_train(output, _yy)  
                 
             # evaluate on validation and test data
             val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
@@ -305,37 +311,29 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         new_y[0] = np.load(y_init_path)
         return new_y
 
-    def extract_features(features_path,losses_path):
-        if not os.path.exists(features_path) or not os.path.exists(losses_path) or not os.path.exists(outs_path) or (USE_SAVED == 0):
-            features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
-            outs = np.zeros((NUM_TRAINDATA,NUM_CLASSES))
-            losses = np.zeros(NUM_TRAINDATA)
-            c = nn.CrossEntropyLoss(reduction='none').to(DEVICE)
-            for batch_idx, (images, labels) in enumerate(t_dataloader):
-                images, labels = images.to(DEVICE), labels.to(DEVICE)
-                index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-                output, feats = feature_encoder(images,get_feat=True)
-                features[index] = feats.cpu().detach().numpy()
-                outs[index] = output.cpu().detach().numpy()
-                loss = c(output, labels)
-                losses[index] = loss.detach().cpu().numpy()
-            if not os.path.exists(features_path) or (USE_SAVED == 0):
-                np.save(features_path,features)
-            if not os.path.exists(losses_path) or (USE_SAVED == 0):
-                np.save(losses_path,losses)
-            if not os.path.exists(outs_path) or (USE_SAVED == 0):
-                np.save(outs_path,outs)
-        return np.load(features_path), np.load(losses_path), np.load(outs_path)
-
     def get_dataloaders_meta():
         assert NUM_METADATA != None, 'For no clean data use for meta-data, --metadata_num should be given'
         from scipy.spatial import distance
         from sklearn.decomposition import PCA
         NUM_TRAINDATA = len(train_dataset)
         num_meta_data_per_class = int(NUM_METADATA/NUM_CLASSES)
-        labels = np.argmax(outs, axis=1)
         idx_meta = None
-        
+
+        # extract features, losses and outputs
+        features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
+        outs = np.zeros((NUM_TRAINDATA,NUM_CLASSES))
+        losses = np.zeros(NUM_TRAINDATA)
+        c = nn.CrossEntropyLoss(reduction='none').to(DEVICE)
+        for batch_idx, (images, labels) in enumerate(train_dataloader):
+            images, labels = images.to(DEVICE), labels.to(DEVICE)
+            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
+            output, feats = feature_encoder(images,get_feat=True)
+            features[index] = feats.cpu().detach().numpy()
+            outs[index] = output.cpu().detach().numpy()
+            loss = c(output, labels)
+            losses[index] = loss.detach().cpu().numpy()
+
+        labels = np.argmax(outs, axis=1)
         if clean_data_type == 'mahalanobis' or clean_data_type == 'euclidean':
             from sklearn.cluster import KMeans
             #kmeans = KMeans(n_clusters=1, random_state=RANDOM_SEED).fit(features4meta)
@@ -490,7 +488,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         m_dataloader = torch.utils.data.DataLoader(m_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers, drop_last=True)
         return t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true
 
-    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, meta_iter:{}, sep_stage: {}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2, NUM_META_ITER, SEPERATED_STAGE))
+    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, meta_iter:{}, sep_stage: {}, Num-data(meta,unlabeled): {}/{}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2, NUM_META_ITER, SEPERATED_STAGE, NUM_METADATA, NUM_UNLABELED))
 
     class MetaNet(nn.Module):
         def __init__(self, input, output):
@@ -523,14 +521,11 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
 
     # paths for save and load
-    path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
+    path_ext = '{}_{}_{}_{}_{}'.format(NUM_TRAINDATA,NUM_METADATA,NUM_UNLABELED,RANDOM_SEED,stage1)
     if DATASET in DATASETS_SMALL:
         path_ext = '{}_{}_{}'.format(path_ext,NOISE_TYPE,NOISE_RATIO)
     model_s1_path = '{}/model_s1_{}_{}.pt'.format(DATASET,path_ext,clean_data_type=='validation')
     y_init_path = '{}/yinit_{}.npy'.format(DATASET,path_ext)
-    features_path = '{}/features_{}.npy'.format(DATASET,path_ext)
-    outs_path = '{}/outs_{}.npy'.format(DATASET,path_ext)
-    losses_path = '{}/losses_{}.npy'.format(DATASET,path_ext)
 
     # if not done beforehand, perform warmup-training
     warmup_training(model_s1_path)
@@ -540,29 +535,12 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
 
     # if no use clean data, extract reliable data for meta subset
     if clean_data_type  != 'validation':
-        # extract features for all training data
-        features4meta, losses, outs = extract_features(features_path,losses_path) 
-        # aggragate label information
-        labels4meta = init_labels(y_init_path)
         # contrcut the new training and meta data
         t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true = get_dataloaders_meta()
         NUM_TRAINDATA = len(t_dataset)
-        # update paths since NUM_TRAINDATA is changed
-        path_ext = '{}_{}_{}'.format(NUM_TRAINDATA,RANDOM_SEED,stage1)
-        if DATASET in DATASETS_SMALL:
-            path_ext = '{}_{}_{}'.format(path_ext,NOISE_TYPE,NOISE_RATIO)
-        y_init_path = '{}/yinit_{}_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider, percentage_consider2)
-        features_path = '{}/features_{}_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider, percentage_consider2)
-        outs_path = '{}/outs_{}_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider, percentage_consider2)
-        losses_path = '{}/losses_{}_{}_{}_{}_{}.npy'.format(DATASET,path_ext,clean_data_type,kmeans_clusternum, percentage_consider, percentage_consider2)
-        del features4meta
-        gc.collect
 
     # initialize predicted labels with given labels
     new_y = init_labels(y_init_path)
-    # extract features for all training data
-    if DATASET != 'clothing1M':    # due to memory limit dont use precomputed features
-        features, _, _ = extract_features(features_path,losses_path) 
     # meta training
     train()
 
@@ -706,7 +684,7 @@ if __name__ == "__main__":
     
     parser.add_argument('-c', '--clean_data_type', required=False, type=str, default='validation',
         help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
-    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=4000,
+    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=5000,
         help="Number of samples to be used as meta-data")
     parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
         help="Number of samples to be used as unlabeled-data")
@@ -804,9 +782,9 @@ if __name__ == "__main__":
     softmax = nn.Softmax(dim=1).to(DEVICE)
   
     if DATASET in DATASETS_SMALL:
-        print("Dataset: {}, Noise type: {}, Noise ratio: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}".format(DATASET, NOISE_TYPE, NOISE_RATIO,MODEL_NAME, DEVICE, BATCH_SIZE, ngpu))
+        print("Dataset: {}, Noise type: {}, Noise ratio: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}, Seed: {}".format(DATASET, NOISE_TYPE, NOISE_RATIO,MODEL_NAME, DEVICE, BATCH_SIZE, ngpu, RANDOM_SEED))
     else:
-        print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}".format(DATASET, MODEL_NAME, DEVICE, BATCH_SIZE, ngpu))
+        print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}, Seed: {}".format(DATASET, MODEL_NAME, DEVICE, BATCH_SIZE, ngpu, RANDOM_SEED))
 
     # if logging
     if SAVE_LOGS == 1:

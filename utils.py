@@ -9,7 +9,7 @@ PARAMS = {'mnist_fashion'     :{'epochs':25, 'batch_size':32, 'num_classes':10 ,
           'clothing1M50k'     :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'clothing1Mbalanced':{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'food101N'          :{'epochs':10, 'batch_size':32, 'num_classes':101, 'num_features': 2048},
-          'WebVision'         :{'epochs':100,'batch_size':16, 'num_classes':50,  'num_features': 1536}}
+          'WebVision'         :{'epochs':100,'batch_size':20, 'num_classes':50,  'num_features': 1536}}
 
 def create_folder(folder):
     if not os.path.exists(folder):
@@ -47,10 +47,10 @@ def get_lr_scheduler(dataset):
         return lr_scheduler_clothing1M
     elif dataset == 'WebVision':
         def lr_scheduler_WebVision(epoch):
-            if epoch > 12:
-                return 1e-3
-            else:
+            if epoch < 5:
                 return 1e-2
+            else:
+                return 1e-3
         return lr_scheduler_WebVision
     
 def get_meta_lr_scheduler(lr_type, stage1, stage2, lambda1, lambda2):

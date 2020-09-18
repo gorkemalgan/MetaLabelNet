@@ -2,8 +2,8 @@ DATASETS_SMALL = ['mnist_fashion','cifar10','cifar100']
 DATASETS_BIG = ['food101N', 'clothing1M', 'clothing1M50k', 'clothing1Mbalanced', 'WebVision']
 DATASETS = DATASETS_SMALL + DATASETS_BIG
 
-IMG_RESIZED = {'food101N':256, 'clothing1M':256, 'clothing1M50k':256, 'clothing1Mbalanced':256, 'WebVision':256}
-IMG_CROPPED = {'food101N':224, 'clothing1M':224, 'clothing1M50k':224, 'clothing1Mbalanced':224, 'WebVision':224}
+IMG_RESIZED = {'food101N':256, 'clothing1M':256, 'clothing1M50k':256, 'clothing1Mbalanced':256, 'WebVision':320}
+IMG_CROPPED = {'food101N':224, 'clothing1M':224, 'clothing1M50k':224, 'clothing1Mbalanced':224, 'WebVision':299}
 
 import numpy as np
 import os, sys
@@ -518,7 +518,163 @@ def get_smalldata(dataset_name, random_seed, num_validation, num_unlabeled, nois
 
     return x_train, y_train, x_val, y_val, x_test, y_test, x_unlabeled, y_unlabeled, class_names
 
-def get_bigdata_lists(dataset_name,random_seed,num_validation):
+def get_imagenetlabel(class_name):
+    label_dict = {0: {'id': '01440764-n',
+        'label': 'tench, Tinca tinca',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01440764-n'},
+    1: {'id': '01443537-n',
+        'label': 'goldfish, Carassius auratus',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01443537-n'},
+    2: {'id': '01484850-n',
+        'label': 'great white shark, white shark, man-eater, man-eating shark, Carcharodon carcharias',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01484850-n'},
+    3: {'id': '01491361-n',
+        'label': 'tiger shark, Galeocerdo cuvieri',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01491361-n'},
+    4: {'id': '01494475-n',
+        'label': 'hammerhead, hammerhead shark',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01494475-n'},
+    5: {'id': '01496331-n',
+        'label': 'electric ray, crampfish, numbfish, torpedo',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01496331-n'},
+    6: {'id': '01498041-n',
+        'label': 'stingray',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01498041-n'},
+    7: {'id': '01514668-n',
+        'label': 'cock',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01514668-n'},
+    8: {'id': '01514859-n',
+        'label': 'hen',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01514859-n'},
+    9: {'id': '01518878-n',
+        'label': 'ostrich, Struthio camelus',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01518878-n'},
+    10: {'id': '01530575-n',
+        'label': 'brambling, Fringilla montifringilla',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01530575-n'},
+    11: {'id': '01531178-n',
+        'label': 'goldfinch, Carduelis carduelis',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01531178-n'},
+    12: {'id': '01532829-n',
+        'label': 'house finch, linnet, Carpodacus mexicanus',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01532829-n'},
+    13: {'id': '01534433-n',
+        'label': 'junco, snowbird',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01534433-n'},
+    14: {'id': '01537544-n',
+        'label': 'indigo bunting, indigo finch, indigo bird, Passerina cyanea',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01537544-n'},
+    15: {'id': '01558993-n',
+        'label': 'robin, American robin, Turdus migratorius',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01558993-n'},
+    16: {'id': '01560419-n',
+        'label': 'bulbul',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01560419-n'},
+    17: {'id': '01580077-n',
+        'label': 'jay',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01580077-n'},
+    18: {'id': '01582220-n',
+        'label': 'magpie',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01582220-n'},
+    19: {'id': '01592084-n',
+        'label': 'chickadee',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01592084-n'},
+    20: {'id': '01601694-n',
+        'label': 'water ouzel, dipper',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01601694-n'},
+    21: {'id': '01608432-n',
+        'label': 'kite',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01608432-n'},
+    22: {'id': '01614925-n',
+        'label': 'bald eagle, American eagle, Haliaeetus leucocephalus',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01614925-n'},
+    23: {'id': '01616318-n',
+        'label': 'vulture',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01616318-n'},
+    24: {'id': '01622779-n',
+        'label': 'great grey owl, great gray owl, Strix nebulosa',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01622779-n'},
+    25: {'id': '01629819-n',
+        'label': 'European fire salamander, Salamandra salamandra',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01629819-n'},
+    26: {'id': '01630670-n',
+        'label': 'common newt, Triturus vulgaris',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01630670-n'},
+    27: {'id': '01631663-n',
+        'label': 'eft',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01631663-n'},
+    28: {'id': '01632458-n',
+        'label': 'spotted salamander, Ambystoma maculatum',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01632458-n'},
+    29: {'id': '01632777-n',
+        'label': 'axolotl, mud puppy, Ambystoma mexicanum',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01632777-n'},
+    30: {'id': '01641577-n',
+        'label': 'bullfrog, Rana catesbeiana',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01641577-n'},
+    31: {'id': '01644373-n',
+        'label': 'tree frog, tree-frog',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01644373-n'},
+    32: {'id': '01644900-n',
+        'label': 'tailed frog, bell toad, ribbed toad, tailed toad, Ascaphus trui',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01644900-n'},
+    33: {'id': '01664065-n',
+        'label': 'loggerhead, loggerhead turtle, Caretta caretta',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01664065-n'},
+    34: {'id': '01665541-n',
+        'label': 'leatherback turtle, leatherback, leathery turtle, Dermochelys coriacea',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01665541-n'},
+    35: {'id': '01667114-n',
+        'label': 'mud turtle',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01667114-n'},
+    36: {'id': '01667778-n',
+        'label': 'terrapin',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01667778-n'},
+    37: {'id': '01669191-n',
+        'label': 'box turtle, box tortoise',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01669191-n'},
+    38: {'id': '01675722-n',
+        'label': 'banded gecko',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01675722-n'},
+    39: {'id': '01677366-n',
+        'label': 'common iguana, iguana, Iguana iguana',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01677366-n'},
+    40: {'id': '01682714-n',
+        'label': 'American chameleon, anole, Anolis carolinensis',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01682714-n'},
+    41: {'id': '01685808-n',
+        'label': 'whiptail, whiptail lizard',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01685808-n'},
+    42: {'id': '01687978-n',
+        'label': 'agama',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01687978-n'},
+    43: {'id': '01688243-n',
+        'label': 'frilled lizard, Chlamydosaurus kingi',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01688243-n'},
+    44: {'id': '01689811-n',
+        'label': 'alligator lizard',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01689811-n'},
+    45: {'id': '01692333-n',
+        'label': 'Gila monster, Heloderma suspectum',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01692333-n'},
+    46: {'id': '01693334-n',
+        'label': 'green lizard, Lacerta viridis',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01693334-n'},
+    47: {'id': '01694178-n',
+        'label': 'African chameleon, Chamaeleo chamaeleon',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01694178-n'},
+    48: {'id': '01695060-n',
+        'label': 'Komodo dragon, Komodo lizard, dragon lizard, giant lizard, Varanus komodoensis',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01695060-n'},
+    49: {'id': '01697457-n',
+        'label': 'African crocodile, Nile crocodile, Crocodylus niloticus',
+        'uri': 'http://wordnet-rdf.princeton.edu/wn30/01697457-n'}}
+
+    for key in label_dict:
+        if label_dict[key]['id'][:-2] == class_name[1:]:
+            return int(key)
+
+def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
     from sklearn.model_selection import train_test_split
 
     train_imgs = []
@@ -527,6 +683,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
     val_labels = {}
     test_imgs = []
     test_labels = {}
+    unlabeled_imgs, unlabeled_labels  = None, None
 
     if dataset_name == 'food101N':
         def get_label(file_path):
@@ -589,7 +746,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, None, None, class_names
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, unlabeled_imgs, unlabeled_labels, class_names
     elif dataset_name == 'clothing1M' or dataset_name == 'clothing1M50k' or dataset_name == 'clothing1Mbalanced':
         data_dir = 'clothing1M/dataset/'
         class_names = ['T-Shirt','Shirt','Knitwear','Chiffon','Sweater','Hoodie','Windbreaker','Jacket','Downcoat','Suit','Shawl','Dress','Vest','Underwear']
@@ -637,8 +794,6 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                 train_labels[img_path] = int(entry[1])
 
         if dataset_name == 'clothing1Mbalanced':
-            unlabeled_imgs  = []
-            unlabeled_labels = {}
             from collections import Counter
             # find class with minimum num of samples
             min_samples = 1000000
@@ -656,14 +811,17 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                     train_imgs2.append(img)
                     train_labels2[img] = label
                     class_counts[label] += 1
-                else:
-                    unlabeled_imgs.append(img)
-                    unlabeled_labels[img] = label
             train_imgs = train_imgs2
             train_labels = train_labels2
-        else:
-            unlabeled_imgs  = None
-            unlabeled_labels = None
+
+            # divide unlabeled set
+            if num_unlabeled != 0:
+                unlabeled_imgs  = []
+                train_labels_tmp = []
+                unlabeled_labels = train_labels
+                for key in train_labels:
+                    train_labels_tmp.append(train_labels[key])
+                train_imgs, unlabeled_imgs, _, _ = train_test_split(train_imgs, train_labels_tmp, test_size=num_unlabeled, random_state=random_seed)
             
         if num_validation != None:
             val_imgs_tmp = []
@@ -703,13 +861,27 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation):
                 val_labels[img_path]=target  
                 val_labels_tmp.append(target)
 
-        if num_validation != None:
-            test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=num_validation, random_state=random_seed) 
-        else:
-            test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=1000, random_state=random_seed) 
+        # add images from WebVision validation dataset to validation dataset
+        NUM_WV_VAL_DATA = 1000
+        test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=NUM_WV_VAL_DATA, random_state=random_seed) 
+        # add images from Imagenet dataset to validation dataset
+        if num_validation > NUM_WV_VAL_DATA:
+            imagenet_dir = data_dir + 'ImageNet/'
+            imagenet_imgs, imagenet_labels = [], []
+            classes = os.listdir(imagenet_dir)
+            for class_name in classes:
+                imgs = os.listdir(os.path.join(imagenet_dir,class_name))
+                for img in imgs:
+                    imagenet_imgs.append(os.path.join(imagenet_dir,class_name,img)) 
+                    imagenet_labels.append(get_imagenetlabel(class_name))
+            _, imgnet_imgs, _, imgnet_labels = train_test_split(imagenet_imgs, imagenet_labels, test_size=num_validation-NUM_WV_VAL_DATA, random_state=random_seed)
+            for img_path,label in zip(imgnet_imgs,imgnet_labels):
+                val_imgs.append(img_path)
+                val_labels[img_path]=label 
+
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
-        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, val_labels, None, None, class_names
+        return train_imgs, train_labels, val_imgs, val_labels, test_imgs, val_labels, unlabeled_imgs, unlabeled_labels, class_names
 
 def get_bigdata_tf(dataset_name,random_seed,num_validation):
     import tensorflow as tf
@@ -756,9 +928,9 @@ def get_bigdata_tf(dataset_name,random_seed,num_validation):
     
     return train_ds, val_ds, test_ds, meta_ds, class_names
 
-def get_bigdata_torch(dataset_name,random_seed,num_validation):
+def get_bigdata_torch(dataset_name,random_seed,num_validation,num_unlabeled):
     import torchvision.transforms as transforms      
-    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, unlabeled_imgs, unlabeled_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation)
+    train_imgs, train_labels, val_imgs, val_labels, test_imgs, test_labels, unlabeled_imgs, unlabeled_labels, class_names = get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled)
     transform_train = transforms.Compose([
             transforms.Resize((IMG_RESIZED[dataset_name],IMG_RESIZED[dataset_name])),
             transforms.CenterCrop((IMG_CROPPED[dataset_name],IMG_CROPPED[dataset_name])),
@@ -856,7 +1028,7 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
         if framework == 'tensorflow':
             return get_bigdata_tf(dataset_name,random_seed,num_validation)
         elif framework == 'pytorch':
-            return get_bigdata_torch(dataset_name,random_seed,num_validation)
+            return get_bigdata_torch(dataset_name,random_seed,num_validation,num_unlabeled)
 
 def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2):
     framework = get_framework(framework)
