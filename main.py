@@ -29,9 +29,9 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':7,'stage2':40}}
+               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':40}}
 
-def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2):
+def meta_noisy_train(alpha, beta, gamma, stage1, stage2):
     def warmup_training(model_s1_path):
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
@@ -171,6 +171,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                         meta_net.eval()
                         _, feats = feature_encoder(images,get_feat=True)
                         yy = meta_net(feats)
+                        if data_type == 'labeled':
                         _, labels_yy[index] = torch.max(yy.cpu(), 1)
                         train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
                         label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
@@ -183,33 +184,32 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                         metanet_state = meta_net.state_dict()
                         # dont compute compatibility loss for unlabeled data
                         if data_type == 'labeled':
+                            # consistency-objective
                             loss_compatibility = gamma*criterion_cce(yy, labels)
                             loss_compatibility.backward(retain_graph=True)
                             if DATASET in DATASETS_BIG:#== 'WebVision':
                                 del images,labels,loss_compatibility
                                 gc.collect()
-                                #torch.cuda.empty_cache()
-                        for _ in range(NUM_META_ITER):
-                            images_meta, labels_meta, t_meta_loader_iter = get_batch(m_dataloader,t_meta_loader_iter,size_of_batch)
-                            loss_meta = meta_loss(output, yy, images_meta, labels_meta)/NUM_META_ITER
-                            loss_meta.backward(retain_graph=True)
-                            if DATASET in DATASETS_BIG:# == 'WebVision':
-                                del images_meta,labels_meta, loss_meta
-                                gc.collect()
-                                #torch.cuda.empty_cache()
+                        # meta-objective
+                        images_meta, labels_meta, t_meta_loader_iter = get_batch(m_dataloader,t_meta_loader_iter,size_of_batch)
+                        loss_meta = meta_loss(output, yy, images_meta, labels_meta)
+                        loss_meta.backward(retain_graph=True)
+                        if DATASET in DATASETS_BIG:# == 'WebVision':
+                            del images_meta,labels_meta, loss_meta
+                            gc.collect()
                         optimizer_meta_net.step()
                         # keep log of gradients
                         for tag, parm in meta_net.named_parameters():
                             if parm.grad != None:
                                 grads_dict[tag] += parm.grad.data.cpu().numpy()
 
-                        if SEPERATED_STAGE == 0:
-                            # conventional training
-                            meta_net.eval()
-                            _yy = meta_net(feats).detach()
+                        # conventional training
+                        meta_net.eval()
+                        _yy = meta_net(feats).detach()
+                        loss = conventional_train(output, _yy)
+                        train_loss.update(loss.item())
+                        if data_type == 'labeled':
                             new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
-                            loss = conventional_train(output, _yy)
-                            train_loss.update(loss.item())
                         del feats, yy
 
                         # dont train metanet on unlabeled data
@@ -221,32 +221,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                             sys.stdout.write(template.format(batch_idx*BATCH_SIZE/NUM_TRAINDATA, train_accuracy.percentage, train_accuracy_meta.percentage, time.time()-start))
             if VERBOSE == 2:
                 sys.stdout.flush()  
-
-            if SEPERATED_STAGE == 1:
-                # conventional training
-                meta_net.eval()
-                for batch_idx, (images, labels) in enumerate(t_dataloader):  
-                    index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
-                    images, labels = images.to(DEVICE), labels.to(DEVICE)     
-                    # conventional training
-                    _, feats = feature_encoder(images,get_feat=True)
-                    _yy = meta_net(feats).detach()
-                    output, _ = net(images,get_feat=True)
-                    new_y[meta_epoch+1,index,:] = _yy.cpu().numpy()
-                    loss = conventional_train(output, _yy)
-                    train_loss.update(loss.item())    
-
-            # train on unlabeled dataset
-            #if not (u_dataloader is None):
-            #    meta_net.eval()
-            #    for batch_idx, (images, labels) in enumerate(u_dataloader):  
-            #        index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0)) 
-            #        images, labels = images.to(DEVICE), labels.to(DEVICE)     
-            #        _, feats = feature_encoder(images,get_feat=True)
-            #        _yy = meta_net(feats).detach()
-            #        output, _ = net(images,get_feat=True)
-            #        loss = conventional_train(output, _yy)  
-                
+             
             # evaluate on validation and test data
             val_accuracy, val_loss, topk_accuracy = evaluate(net, m_dataloader, criterion_cce)
             test_accuracy, test_loss, topk_accuracy = evaluate(net, test_dataloader, criterion_cce)
@@ -281,19 +256,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed,miter,sstage): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}/{}/{}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider,percentage_consider2,RANDOM_SEED,NUM_META_ITER,SEPERATED_STAGE,
+                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma,RANDOM_SEED,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,c,k,p1,p2,seed,miter,sstage): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{:3.2f}/{:3.2f}/{}/{}/{}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2,RANDOM_SEED,NUM_META_ITER,SEPERATED_STAGE))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, RANDOM_SEED))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'use_clean':clean_data_type, 'k':kmeans_clusternum, 'p1':percentage_consider, 'p2':percentage_consider2, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED, 'meta_iter':NUM_META_ITER, 'sep_stage':SEPERATED_STAGE}, 
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED}, 
                                   {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -311,184 +286,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
         new_y[0] = np.load(y_init_path)
         return new_y
 
-    def get_dataloaders_meta():
-        assert NUM_METADATA != None, 'For no clean data use for meta-data, --metadata_num should be given'
-        from scipy.spatial import distance
-        from sklearn.decomposition import PCA
-        NUM_TRAINDATA = len(train_dataset)
-        num_meta_data_per_class = int(NUM_METADATA/NUM_CLASSES)
-        idx_meta = None
-
-        # extract features, losses and outputs
-        features = np.zeros((NUM_TRAINDATA,NUM_FEATURES))
-        outs = np.zeros((NUM_TRAINDATA,NUM_CLASSES))
-        losses = np.zeros(NUM_TRAINDATA)
-        c = nn.CrossEntropyLoss(reduction='none').to(DEVICE)
-        for batch_idx, (images, labels) in enumerate(train_dataloader):
-            images, labels = images.to(DEVICE), labels.to(DEVICE)
-            index = np.arange(batch_idx*BATCH_SIZE, (batch_idx)*BATCH_SIZE+labels.size(0))
-            output, feats = feature_encoder(images,get_feat=True)
-            features[index] = feats.cpu().detach().numpy()
-            outs[index] = output.cpu().detach().numpy()
-            loss = c(output, labels)
-            losses[index] = loss.detach().cpu().numpy()
-
-        labels = np.argmax(outs, axis=1)
-        if clean_data_type == 'mahalanobis' or clean_data_type == 'euclidean':
-            from sklearn.cluster import KMeans
-            #kmeans = KMeans(n_clusters=1, random_state=RANDOM_SEED).fit(features4meta)
-            #labels = kmeans.predict(features4meta)
-            # get idx of samples for each classes
-            for i in range(NUM_CLASSES):
-                idx_i = labels == i
-                idx_i = np.where(idx_i == True)[0]
-                num_i = len(idx_i)
-                num_i_consider = int(num_i*percentage_consider)
-
-                loss_values_i = losses[idx_i]
-                sorted_idx_i = np.argsort(loss_values_i)
-                considered_idx2 = sorted_idx_i[:num_i_consider]
-                idx_i = np.take(idx_i, considered_idx2)
-                #pca = PCA(n_components='mle', svd_solver='full')#n_components=kmeans_clusternum)
-                #pca.fit(features4meta[idx_i])
-                #feature_vectors = pca.transform(features4meta[idx_i])
-                feature_vectors = features4meta[idx_i].copy()
-
-                centroid_i = np.mean(feature_vectors, axis = 0)#kmeans.cluster_centers_[i]
-                num_i_afterloss = len(idx_i)
-                distances_i = np.zeros(num_i_afterloss)
-                if clean_data_type == 'mahalanobis':
-                    cov_i = np.cov(feature_vectors.transpose())
-                    try:
-                        invcov_i = np.linalg.inv(cov_i)
-                    except:
-                        invcov_i = np.linalg.pinv(cov_i)
-                    for j in range(num_i_afterloss):
-                        distances_i[j] = distance.mahalanobis(feature_vectors[j], centroid_i, invcov_i)
-                elif clean_data_type == 'euclidean':
-                    for j in range(num_i_afterloss):
-                        distances_i[j] = distance.euclidean(feature_vectors[j], centroid_i)
-                sorted_idx_i = np.argsort(distances_i)
-                #considered_idx = sorted_idx_i[:int(num_i_consider*percentage_consider2)]
-                #considered_idx = np.take(idx_i, considered_idx)
-                #anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
-
-                percentage_clip = (1 - percentage_consider2)/2
-                considered_idx = sorted_idx_i[int(num_i_afterloss*percentage_clip):num_i_afterloss-int(num_i_afterloss*percentage_clip)]
-                considered_idx = np.take(idx_i, considered_idx)
-                idx_rand = np.random.choice(considered_idx.shape[0], num_meta_data_per_class, replace=False)
-                anchor_idx_i = considered_idx[idx_rand]
-
-                #kmeans = KMeans(n_clusters=kmeans_clusternum, random_state=RANDOM_SEED).fit(features4meta[idx_i])
-                #kmeans_labels = kmeans.predict(features4meta[idx_i])
-                #num_samples_i = len(idx_i)
-                #anchor_idx_i = None
-                #for j in range(kmeans_clusternum):
-                #    idx_j = kmeans_labels == j
-                #    idx_j = np.where(idx_j == True)[0]
-                #    idx_j = idx_i[idx_j]
-                #    cluster_count_j = len(idx_j)
-                #    num2pick = int((cluster_count_j / num_samples_i)*num_meta_data_per_class)#int(num_meta_data_per_class/kmeans_clusternum)
-                #    distances_j = kmeans.transform(features4meta[idx_j])[:,j]
-                #    sorted_idx_j = np.argsort(distances_j)  
-                #    selected_idx_j = sorted_idx_j[int(len(sorted_idx_j)/2-num2pick/2):int(len(sorted_idx_j)/2+num2pick/2)] 
-                #    selected_idx_j  = idx_j[selected_idx_j]
-                #    if anchor_idx_i is None:
-                #        anchor_idx_i = selected_idx_j
-                #    else:
-                #        anchor_idx_i = np.concatenate((anchor_idx_i,selected_idx_j))     
-                
-
-                #from sklearn.model_selection import LeavePOut, KFold, ShuffleSplit
-                #kf = KFold(n_splits=int(num_i_consider/num_meta_data_per_class), random_state=RANDOM_SEED)
-                #kf = LeavePOut(int(num_i_consider/num_meta_data_per_class))
-                #kf = ShuffleSplit(n_splits=500, test_size=num_meta_data_per_class, random_state=RANDOM_SEED)
-                #v_max = 0
-                #for train_index, meta_index in kf.split(considered_idx):
-                #    v = np.var(feature_vectors[meta_index], axis=0).mean()
-                #    if v > v_max:
-                #        v_max = v
-                #        anchor_idx_i = meta_index
-
-                #num_rad = kmeans_clusternum
-                #num_meta_data_per_class_tmp = int(num_meta_data_per_class/num_rad)
-                #anchor_idx_i = None
-                #for j in range(num_rad):
-                #    rad = int( (num_i_consider/num_rad)*(j+1)) # int(num_i_consider / (j+1))
-                #    anchor_idx_tmp = considered_idx[rad-num_meta_data_per_class_tmp:rad]
-                #    if anchor_idx_i is None:
-                #        anchor_idx_i = anchor_idx_tmp
-                #    else:
-                #        anchor_idx_i = np.concatenate((anchor_idx_i,anchor_idx_tmp))
-
-                if idx_meta is None:
-                    idx_meta = anchor_idx_i
-                else:
-                    idx_meta = np.concatenate((idx_meta,anchor_idx_i))
-                if not (clean_idx is None) and VERBOSE > 0:
-                    print('Ratio true for {}: {}'.format(i, len(np.intersect1d(anchor_idx_i, clean_idx)) / len(anchor_idx_i)))
-        elif clean_data_type == 'loss':
-            for i in range(NUM_CLASSES):
-                idx_i = labels == i
-                idx_i = np.where(idx_i == True)[0]
-                num_i = len(idx_i)
-                num_i_consider = int(num_i*percentage_consider)
-
-                #loss_values_i = losses[idx_i]
-                #sorted_idx_i = np.argsort(loss_values_i)
-                #considered_idx = sorted_idx_i[:num_i_consider]
-                #idx_i = np.take(idx_i, considered_idx)
-
-                loss_values_i = losses[idx_i]
-                loss_sorted_idx_i = np.argsort(loss_values_i)
-                loss_sorted_idx_i = np.take(idx_i, loss_sorted_idx_i)
-
-                out_values_i = outs[idx_i,i]
-                out_sorted_idx_i = np.argsort(out_values_i)
-                out_sorted_idx_i = np.take(idx_i, out_sorted_idx_i)
-
-                anchor_idx_i = np.intersect1d(np.flip(loss_sorted_idx_i), out_sorted_idx_i[-1*num_i_consider:])
-                anchor_idx_i = anchor_idx_i[:num_meta_data_per_class]
-
-                #intersect_length=0
-                #considered_len = 0
-                #while intersect_length < num_meta_data_per_class:
-                #    considered_len = considered_len + 1
-                #    anchor_idx_i = np.intersect1d(loss_sorted_idx_i[-1*considered_len:], out_sorted_idx_i[-1*considered_len:])
-                #    intersect_length = len(anchor_idx_i)
-                #print(considered_len)
-
-
-                #considered_idx = sorted_idx_i[:num_i_consider]
-                #considered_idx = np.take(idx_i, considered_idx)
-                #anchor_idx_i = considered_idx[-1*num_meta_data_per_class:]
-                if idx_meta is None:
-                    idx_meta = anchor_idx_i
-                else:
-                    idx_meta = np.concatenate((idx_meta,anchor_idx_i))
-                if not (clean_idx is None) and VERBOSE > 0:
-                    print('Ratio true for {}: {}'.format(i, len(np.intersect1d(anchor_idx_i, clean_idx)) / len(anchor_idx_i)))
-        else:
-            assert False, 'use_clean should be one of: validation, loss, mahalanobis or euclidean'
-
-        random.Random(RANDOM_SEED).shuffle(idx_meta)
-        idx_train = np.setdiff1d(np.arange(NUM_TRAINDATA),np.array(idx_meta))
-        if not (noisy_idx is None):
-            n_idx, c_labels = noisy_idx, clean_labels[idx_train] # todo
-            meta_true = len(np.intersect1d(idx_meta, clean_idx)) / len(idx_meta)
-            if VERBOSE > 0:
-                print('Ratio true for all: {}'.format(meta_true))
-        else:
-            n_idx, c_labels = None, None
-            meta_true = None
-
-        t_dataset = torch.utils.data.Subset(train_dataset, idx_train)
-        m_dataset = torch.utils.data.Subset(train_dataset, idx_meta)
-        t_dataloader = torch.utils.data.DataLoader(t_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
-        m_dataloader = torch.utils.data.DataLoader(m_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers, drop_last=True)
-        return t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true
-
-    print('use_clean:{}, k:{}, p1:{}, p2:{}, alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, meta_iter:{}, sep_stage: {}, Num-data(meta,unlabeled): {}/{}'.format(clean_data_type, kmeans_clusternum, percentage_consider, percentage_consider2, alpha, beta, gamma, stage1, stage2, NUM_META_ITER, SEPERATED_STAGE, NUM_METADATA, NUM_UNLABELED))
+    print('alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, Num-data(meta,unlabeled): {}/{}'.format(alpha, beta, gamma, stage1, stage2, NUM_METADATA, NUM_UNLABELED))
 
     class MetaNet(nn.Module):
         def __init__(self, input, output):
@@ -521,10 +319,10 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     criterion_meta = lambda output, labels: torch.mean(softmax(output)*(logsoftmax(output+1e-10)-torch.log(labels+1e-10)))
 
     # paths for save and load
-    path_ext = '{}_{}_{}_{}_{}'.format(NUM_TRAINDATA,NUM_METADATA,NUM_UNLABELED,RANDOM_SEED,stage1)
+    path_ext = '{}_{}_{}_{}'.format(NUM_TRAINDATA,NUM_UNLABELED,RANDOM_SEED,stage1)
     if DATASET in DATASETS_SMALL:
         path_ext = '{}_{}_{}'.format(path_ext,NOISE_TYPE,NOISE_RATIO)
-    model_s1_path = '{}/model_s1_{}_{}.pt'.format(DATASET,path_ext,clean_data_type=='validation')
+    model_s1_path = '{}/model_s1_{}.pt'.format(DATASET,path_ext)
     y_init_path = '{}/yinit_{}.npy'.format(DATASET,path_ext)
 
     # if not done beforehand, perform warmup-training
@@ -532,12 +330,6 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2, clean_data_type, kmeans
     # set feature encoder as model trained after warm-up
     feature_encoder.load_state_dict(torch.load(model_s1_path, map_location=DEVICE))  
     feature_encoder.eval()
-
-    # if no use clean data, extract reliable data for meta subset
-    if clean_data_type  != 'validation':
-        # contrcut the new training and meta data
-        t_dataset, m_dataset, t_dataloader, m_dataloader, n_idx, c_labels, meta_true = get_dataloaders_meta()
-        NUM_TRAINDATA = len(t_dataset)
 
     # initialize predicted labels with given labels
     new_y = init_labels(y_init_path)
@@ -594,11 +386,11 @@ def get_batch(dataloader,dataloader_iter,batch_size):
     return images, labels, dataloader_iter
 
 def evaluate(net, dataloader, criterion):
-    if dataloader:
         eval_accuracy = AverageMeter()
+    eval_loss = AverageMeter()
         topk_accuracy = AverageMeter()
-        eval_loss = AverageMeter()
 
+    if dataloader:  
         net.eval()
         with torch.no_grad():
             for (inputs, targets) in dataloader:
@@ -682,19 +474,6 @@ if __name__ == "__main__":
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
     
-    parser.add_argument('-c', '--clean_data_type', required=False, type=str, default='validation',
-        help="How to construct meta-data: 'validation', 'loss', 'euclidean' or 'mahalanobis'")
-    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=5000,
-        help="Number of samples to be used as meta-data")
-    parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
-        help="Number of samples to be used as unlabeled-data")
-    parser.add_argument('-k', '--kmeans_clusternum', required=False, type=int, default=10,
-        help="Number of kmeans clusters")
-    parser.add_argument('-p', '--percentage_consider', required=False, type=float, default=0.5,
-        help="Expected percentage of data to consider for meta-data")
-    parser.add_argument('-p2', '--percentage_consider2', required=False, type=float, default=0.5,
-        help="Expected percentage of data to consider for meta-data")
-
     parser.add_argument('-a', '--alpha', required=False, type=float,
         help="Learning rate for meta iteration")
     parser.add_argument('-b', '--beta', required=False, type=float,
@@ -705,10 +484,13 @@ if __name__ == "__main__":
         help="Epoch num to end stage1 (straight training)")
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
-    parser.add_argument('-t', '--meta_iter', required=False, type=int, default=1,
-        help="Meta iteration number")
-    parser.add_argument('--sep_stage', required=False, type=int, default=0,
-        help="Whether to perform conventional training at each batch (0) or after the end of all batchs (1)")
+
+    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=5000,
+        help="Number of samples to be used as meta-data")
+    parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
+        help="Number of samples to be used as unlabeled-data")
+    parser.add_argument('--magicparam', required=False, type=int,
+        help="Free variable for using different tryouts through the code")
     
     args = parser.parse_args()
     #set default variables if they are not given from the command line
@@ -727,13 +509,12 @@ if __name__ == "__main__":
     NUM_CLASSES = PARAMS[DATASET]['num_classes']
     NUM_FEATURES = PARAMS[DATASET]['num_features']
     NUM_META_EPOCHS = args.stage2 - args.stage1
-    NUM_META_ITER = args.meta_iter
     NUM_METADATA = args.metadata_num
-    SEPERATED_STAGE = args.sep_stage
     SAVE_LOGS = args.save_logs
     USE_SAVED = args.use_saved
     RANDOM_SEED = args.seed
     VERBOSE = args.verbose
+    MAGIC_PARAM = args.magicparam
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.gpu_ids is None:
         gpu_ids = 0
@@ -753,15 +534,10 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     # create necessary folders
     create_folder('{}/dataset'.format(DATASET))
-    # global variables
-    if args.clean_data_type != 'validation':
-        train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,verbose=VERBOSE)
-        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,None,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
-        meta_dataloader = None
-    else:
-        train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,NUM_METADATA,args.unlabeleddata_num,verbose=VERBOSE)
-        noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
-        meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
+    # datasets
+    train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,NUM_METADATA,args.unlabeleddata_num,verbose=VERBOSE)
+    noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
+    meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
     if unlabeled_dataset is None:
@@ -789,10 +565,7 @@ if __name__ == "__main__":
     # if logging
     if SAVE_LOGS == 1:
         base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.noise_ratio) + '/' + MODEL_NAME
-        if args.clean_data_type == 'validation':
-            log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_mi{}_ss{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, NUM_META_ITER, SEPERATED_STAGE, current_time)
-        else:
-            log_folder = args.folder_log if args.folder_log else 'c{}_k{}_p{}-{}_a{}_b{}_g{}_s{}_m{}_u{}_sd{}_mi{}_ss{}_{}'.format(args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2, args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, NUM_META_ITER, SEPERATED_STAGE, current_time)
+        log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
         log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
@@ -803,5 +576,5 @@ if __name__ == "__main__":
         hp_writer = SummaryWriter(log_dir_hp)
     
     start_train = time.time()
-    meta_noisy_train(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.clean_data_type, args.kmeans_clusternum, args.percentage_consider, args.percentage_consider2)
+    meta_noisy_train(args.alpha, args.beta, args.gamma, args.stage1, args.stage2)
     print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))

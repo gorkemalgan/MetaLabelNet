@@ -47,10 +47,12 @@ def get_lr_scheduler(dataset):
         return lr_scheduler_clothing1M
     elif dataset == 'WebVision':
         def lr_scheduler_WebVision(epoch):
-            if epoch < 5:
+            if epoch < 12:
                 return 1e-2
-            else:
+            elif epoch < 30:
                 return 1e-3
+            else:
+                return 1e-4
         return lr_scheduler_WebVision
     
 def get_meta_lr_scheduler(lr_type, stage1, stage2, lambda1, lambda2):

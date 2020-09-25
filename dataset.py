@@ -1030,9 +1030,9 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
         elif framework == 'pytorch':
             return get_bigdata_torch(dataset_name,random_seed,num_validation,num_unlabeled)
 
-def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2):
+def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2, num_unlabeled=0):
     framework = get_framework(framework)
-    train_dataset, val_dataset, test_dataset, _, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed)
+    train_dataset, val_dataset, test_dataset, _, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed,num_unlabeled=num_unlabeled)
     if framework == 'tensorflow':
         train_dataloader = train_dataset.batch(batch_size)
         test_dataloader = test_dataset.batch(batch_size)
