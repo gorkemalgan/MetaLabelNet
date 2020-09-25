@@ -172,9 +172,9 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2):
                         _, feats = feature_encoder(images,get_feat=True)
                         yy = meta_net(feats)
                         if data_type == 'labeled':
-                        _, labels_yy[index] = torch.max(yy.cpu(), 1)
-                        train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
-                        label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
+                            _, labels_yy[index] = torch.max(yy.cpu(), 1)
+                            train_accuracy_meta.update(predicted.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), predicted.size(0)) 
+                            label_similarity.update(labels.eq(torch.tensor(labels_yy[index]).to(DEVICE)).cpu().sum().item(), size_of_batch)
 
                         # meta-network training
                         #with torch.autograd.detect_anomaly():
@@ -386,9 +386,9 @@ def get_batch(dataloader,dataloader_iter,batch_size):
     return images, labels, dataloader_iter
 
 def evaluate(net, dataloader, criterion):
-        eval_accuracy = AverageMeter()
+    eval_accuracy = AverageMeter()
     eval_loss = AverageMeter()
-        topk_accuracy = AverageMeter()
+    topk_accuracy = AverageMeter()
 
     if dataloader:  
         net.eval()
