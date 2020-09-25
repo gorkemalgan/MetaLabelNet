@@ -298,13 +298,17 @@ class Block8(nn.Module):
 
 class InceptionResNetV2(nn.Module):
 
-    def __init__(self, num_classes=1001):
+    def __init__(self, num_classes=1001,device=None):
         super(InceptionResNetV2, self).__init__()
         # Special attributs
         self.input_space = None
         self.input_size = (299, 299, 3)
         self.mean = None
         self.std = None
+        if device is None:
+            self.device = torch.device("cuda")
+        else:
+            self.device = device
         # Modules
         self.conv2d_1a = BasicConv2d(3, 32, kernel_size=3, stride=2)
         self.conv2d_2a = BasicConv2d(32, 32, kernel_size=3, stride=1)
@@ -384,21 +388,21 @@ class InceptionResNetV2(nn.Module):
         if weights == None:
             x = self.repeat(x)
         else:
-            block35 = Block35(scale=0.17).to(torch.device("cuda"))
+            block35 = Block35(scale=0.17).to(self.device)
             for i in range(10):
                 x = block35(x,weights, 'repeat.{}'.format(i))
         x = self.mixed_6a(x, weights)
         if weights == None:
             x = self.repeat_1(x)
         else:
-            block17 = Block17(scale=0.10).to(torch.device("cuda"))
+            block17 = Block17(scale=0.10).to(self.device)
             for i in range(20):
                 x = block17(x,weights, 'repeat_1.{}'.format(i))
         x = self.mixed_7a(x, weights)
         if weights == None:
             x = self.repeat_2(x)
         else:
-            block8 = Block8(scale=0.20).to(torch.device("cuda"))
+            block8 = Block8(scale=0.20).to(self.device)
             for i in range(9):
                 x = block8(x,weights, 'repeat_2.{}'.format(i))
         x = self.block8(x, weights, 'block8')

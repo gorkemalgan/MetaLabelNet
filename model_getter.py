@@ -13,7 +13,7 @@ def get_framework(framework=None):
     assert framework in ['tensorflow', 'pytorch'], 'Framework should be either tensorflow or pytorch!'
     return framework
 
-def get_model(dataset, framework='pytorch'):
+def get_model(dataset, framework='pytorch',device=None):
     if dataset == 'mnist_fashion':
         return model_mnistfashion(framework)
     elif dataset == 'cifar10':
@@ -23,7 +23,7 @@ def get_model(dataset, framework='pytorch'):
     elif dataset == 'food101N':
         return resnet50(framework, num_classes = 101)
     elif dataset == 'WebVision':
-        return InceptionResNetV2(framework, num_classes = 50)
+        return InceptionResNetV2(framework, num_classes = 50,device=device)
         #return resnet101(framework, num_classes = 50, pretrained=False)
     elif dataset == 'clothing1M' or dataset == 'clothing1M50k' or dataset == 'clothing1Mbalanced':
         return resnet50(framework, num_classes = 14)
@@ -160,11 +160,11 @@ def resnet101(framework, num_classes, pretrained=True):
     elif framework == 'tensorflow':
         return None
 
-def InceptionResNetV2(framework, num_classes):
+def InceptionResNetV2(framework, num_classes,device):
     import os
     if framework == 'pytorch':
         from InceptionResNetV2 import InceptionResNetV2
-        return InceptionResNetV2(num_classes)
+        return InceptionResNetV2(num_classes,device)
     elif framework == 'tensorflow':
         return None
 

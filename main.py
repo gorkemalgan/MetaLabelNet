@@ -547,7 +547,7 @@ if __name__ == "__main__":
         unlabeled_dataloader = torch.utils.data.DataLoader(unlabeled_dataset,batch_size=BATCH_SIZE,shuffle=True)
         NUM_UNLABELED = len(unlabeled_dataset)
     
-    net = get_model(DATASET,FRAMEWORK).to(DEVICE)
+    net = get_model(DATASET,FRAMEWORK,DEVICE).to(DEVICE)
     feature_encoder = get_model(DATASET,FRAMEWORK).to(DEVICE)
     if (DEVICE.type == 'cuda') and (ngpu > 1):
         net = nn.DataParallel(net, list(range(ngpu)))
@@ -565,10 +565,10 @@ if __name__ == "__main__":
     # if logging
     if SAVE_LOGS == 1:
         base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.noise_ratio) + '/' + MODEL_NAME
-        log_folder = args.folder_log if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
+        log_folder = '{}_{}'.format(args.folder_log,current_time) if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
-        log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
+        log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, args.folder_log) if args.folder_log else '{}/logs_hp/{}/'.format(DATASET, base_folder)
         #clean_emptylogs()
         create_folder(log_dir)
         summary_writer = SummaryWriter(log_dir)
