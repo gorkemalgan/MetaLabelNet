@@ -716,16 +716,16 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
             img_path = data_dir+'images/'+entry[0]
             verified_val_paths[img_path] = int(entry[1])
 
-        val_imgs_tmp = []
+        data_dir_food101 = 'food101N/dataset/food-101/food-101/'
         val_labels_tmp = []
-        for key in verified_train_paths:
-            if verified_train_paths[key] == 1:
-                val_imgs_tmp.append(key)
-                val_labels_tmp.append(get_label(key))
-        if num_validation == None:
-            _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs_tmp, val_labels_tmp, test_size=10000, random_state=random_seed)
-        else:
-            _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs_tmp, val_labels_tmp, test_size=num_validation, random_state=random_seed)
+        with open(data_dir_food101+'meta/test.txt','r') as f:
+            lines = f.read().splitlines()
+        for l in lines[1:]:
+            img_path = data_dir_food101+'images/'+l+'.jpg'
+            val_imgs.append(img_path)
+            val_labels_tmp.append(get_label(img_path))
+        if not (num_validation is None):
+            _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs, val_labels_tmp, test_size=num_validation, random_state=random_seed)
 
         # take only verified samples for test set
         for key in img_paths:
@@ -734,7 +734,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
                     test_imgs.append(key)
                 else:
                     train_imgs.append(key)
-            elif key not in val_imgs:
+            else:
                 train_imgs.append(key)
 
         for key in train_imgs:

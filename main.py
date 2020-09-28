@@ -31,7 +31,7 @@ PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'sta
                'food101N'          :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':1, 'stage2':10},
                'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'gamma':0.1, 'stage1':14,'stage2':40}}
 
-def meta_noisy_train(alpha, beta, gamma, stage1, stage2):
+def meta_noisy_train(alpha, beta, gamma, stage1, stage2, magicparam):
     def warmup_training(model_s1_path):
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
@@ -256,19 +256,19 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2):
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma,RANDOM_SEED,
+                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, stage1, stage2, magicparam,RANDOM_SEED,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, RANDOM_SEED))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,gamma,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{:3.2f}/{}/{}/{}/{}'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, gamma, stage1, stage2, magicparam, RANDOM_SEED))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED}, 
+            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'gamma':gamma, 'stage1':stage1, 'stage2':stage2, 'magicp':magicparam, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED}, 
                                   {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -286,7 +286,7 @@ def meta_noisy_train(alpha, beta, gamma, stage1, stage2):
         new_y[0] = np.load(y_init_path)
         return new_y
 
-    print('alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, Num-data(meta,unlabeled): {}/{}'.format(alpha, beta, gamma, stage1, stage2, NUM_METADATA, NUM_UNLABELED))
+    print('alpha:{}, beta:{}, gamma:{}, stage1:{}, stage2:{}, mp:{}, Num-data(meta,unlabeled): {}/{}'.format(alpha, beta, gamma, stage1, stage2, magicparam, NUM_METADATA, NUM_UNLABELED))
 
     class MetaNet(nn.Module):
         def __init__(self, input, output):
@@ -489,7 +489,7 @@ if __name__ == "__main__":
         help="Number of samples to be used as meta-data")
     parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
         help="Number of samples to be used as unlabeled-data")
-    parser.add_argument('--magicparam', required=False, type=int,
+    parser.add_argument('--magicparam', required=False, type=int, default=0,
         help="Free variable for using different tryouts through the code")
     
     args = parser.parse_args()
@@ -568,7 +568,9 @@ if __name__ == "__main__":
         log_folder = '{}_{}'.format(args.folder_log,current_time) if args.folder_log else 'a{}_b{}_g{}_s{}_m{}_u{}_sd{}_{}'.format(args.alpha, args.beta, args.gamma, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
-        log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, args.folder_log) if args.folder_log else '{}/logs_hp/{}/'.format(DATASET, base_folder)
+        log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
+        if args.folder_log:
+            log_dir_hp = '{}{}/'.format(log_dir_hp, args.folder_log)
         #clean_emptylogs()
         create_folder(log_dir)
         summary_writer = SummaryWriter(log_dir)
@@ -576,5 +578,5 @@ if __name__ == "__main__":
         hp_writer = SummaryWriter(log_dir_hp)
     
     start_train = time.time()
-    meta_noisy_train(args.alpha, args.beta, args.gamma, args.stage1, args.stage2)
+    meta_noisy_train(args.alpha, args.beta, args.gamma, args.stage1, args.stage2, args.magicparam)
     print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))

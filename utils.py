@@ -8,7 +8,7 @@ PARAMS = {'mnist_fashion'     :{'epochs':25, 'batch_size':32, 'num_classes':10 ,
           'clothing1M'        :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'clothing1M50k'     :{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
           'clothing1Mbalanced':{'epochs':10, 'batch_size':32, 'num_classes':14 , 'num_features': 2048},
-          'food101N'          :{'epochs':10, 'batch_size':32, 'num_classes':101, 'num_features': 2048},
+          'food101N'          :{'epochs':15, 'batch_size':32, 'num_classes':101, 'num_features': 2048},
           'WebVision'         :{'epochs':100,'batch_size':25, 'num_classes':50,  'num_features': 1536}}
 
 def create_folder(folder):
@@ -42,8 +42,10 @@ def get_lr_scheduler(dataset):
         def lr_scheduler_clothing1M(epoch):
             if epoch < 5:
                 return 1e-3
-            else:
+            elif epoch < 10:
                 return 1e-4
+            else:
+                return 1e-5
         return lr_scheduler_clothing1M
     elif dataset == 'WebVision':
         def lr_scheduler_WebVision(epoch):
