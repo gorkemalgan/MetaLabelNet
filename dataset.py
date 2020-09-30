@@ -732,8 +732,6 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
             if key in verified_val_paths:
                 if verified_val_paths[key] == 1:
                     test_imgs.append(key)
-                else:
-                    train_imgs.append(key)
             else:
                 train_imgs.append(key)
 
