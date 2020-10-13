@@ -22,14 +22,12 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'mnist_fashion'     :{'alpha':0.5, 'beta':1e-3, 'stage1':1, 'stage2':20},
-               'cifar10'           :{'alpha':0.5, 'beta':1e-3, 'stage1':44,'stage2':120},
-               'cifar100'          :{'alpha':0.5, 'beta':1e-3, 'stage1':44,'stage2':120},
-               'clothing1M'        :{'alpha':0.5, 'beta':1e-3, 'stage1':1, 'stage2':10},
-               'clothing1M50k'     :{'alpha':0.5, 'beta':1e-3, 'stage1':1, 'stage2':10},
-               'clothing1Mbalanced':{'alpha':0.5, 'beta':1e-3, 'stage1':1, 'stage2':10},
-               'food101N'          :{'alpha':0.5, 'beta':1e-3, 'stage1':1, 'stage2':10},
-               'WebVision'         :{'alpha':0.5, 'beta':1e-3, 'stage1':14,'stage2':40}}
+PARAMS_META = {'cifar10'           :{'alpha':1, 'beta':1e-2, 'stage1':44,'stage2':120, 'num_metadata': 5000},
+               'clothing1M'        :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'clothing1M50k'     :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'clothing1Mbalanced':{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'food101N'          :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':20 , 'num_metadata': 10000},
+               'WebVision'         :{'alpha':1, 'beta':1e-3, 'stage1':14,'stage2':40 , 'num_metadata': 20000}}
 
 def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
     def warmup_training(model_s1_path):
@@ -249,8 +247,8 @@ def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
                                     label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, stage1, stage2, magicparam,RANDOM_SEED,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{}/{}/{}/{}'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, stage1, stage2, magicparam, RANDOM_SEED))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{}/{}/{}/{}, Time: {:3.2f}h'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, stage1, stage2, magicparam, RANDOM_SEED, (time.time()-TRAIN_START_TIME)/3600))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
@@ -275,19 +273,11 @@ def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
     class MetaNet(nn.Module):
         def __init__(self, input, output):
             super(MetaNet, self).__init__()
-            #layer1_size = input
-            #layer2_size = int(input/2)
-            #self.linear1 = nn.Linear(layer1_size, layer1_size)
-            #self.linear2 = nn.Linear(layer1_size, layer2_size)
-            #self.linear3 = nn.Linear(layer2_size, output)
-            #self.bn1 = nn.BatchNorm1d(layer1_size)
-            #self.bn2 = nn.BatchNorm1d(layer2_size)
-            self.linear3 = nn.Linear(input, output)
+            self.linear = nn.Linear(input, output)
         def forward(self, x):
-            #x = F.relu(self.bn1(self.linear1(x)))
-            #x = F.relu(self.bn2(self.linear2(x)))
-            out = self.linear3(x)
+            out = self.linear(x)
             return softmax(out)
+
     meta_net = MetaNet(NUM_FEATURES, NUM_CLASSES).to(DEVICE)
     optimizer_meta_net = torch.optim.Adam(meta_net.parameters(), beta, weight_decay=1e-4)#optim.SGD(meta_net.parameters(), lr=beta, momentum=0.9, weight_decay=1e-4)
     meta_net.train()
@@ -467,11 +457,11 @@ if __name__ == "__main__":
     parser.add_argument('-s2', '--stage2', required=False, type=int,
         help="Epoch num to end stage2 (meta training)")
 
-    parser.add_argument('-m', '--metadata_num', required=False, type=int, default=5000,
+    parser.add_argument('-m', '--metadata_num', required=False, type=int,
         help="Number of samples to be used as meta-data")
     parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
         help="Number of samples to be used as unlabeled-data")
-    parser.add_argument('--magicparam', required=False, type=int, default=0,
+    parser.add_argument('--magicparam', required=False, type=float, default=0,
         help="Free variable for using different tryouts through the code")
     
     args = parser.parse_args()
@@ -490,7 +480,7 @@ if __name__ == "__main__":
     NUM_CLASSES = PARAMS[DATASET]['num_classes']
     NUM_FEATURES = PARAMS[DATASET]['num_features']
     NUM_META_EPOCHS = args.stage2 - args.stage1
-    NUM_METADATA = args.metadata_num
+    NUM_METADATA = args.metadata_num if args.metadata_num != None else PARAMS_META[DATASET]['num_metadata']
     SAVE_LOGS = args.save_logs
     USE_SAVED = args.use_saved
     RANDOM_SEED = args.seed
@@ -517,7 +507,7 @@ if __name__ == "__main__":
     create_folder('{}/dataset'.format(DATASET))
     # datasets
     train_dataset, meta_dataset, test_dataset, unlabeled_dataset, class_names = get_data(DATASET,FRAMEWORK,NOISE_TYPE,NOISE_RATIO,RANDOM_SEED,NUM_METADATA,args.unlabeleddata_num,verbose=VERBOSE)
-    noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,args.metadata_num,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
+    noisy_idx, clean_idx, clean_labels = get_synthetic_idx(DATASET,RANDOM_SEED,NUM_METADATA,args.unlabeleddata_num,NOISE_TYPE,NOISE_RATIO)
     meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
@@ -558,6 +548,5 @@ if __name__ == "__main__":
         create_folder(log_dir_hp)
         hp_writer = SummaryWriter(log_dir_hp)
     
-    start_train = time.time()
+    TRAIN_START_TIME = time.time()
     meta_noisy_train(args.alpha, args.beta, args.stage1, args.stage2, args.magicparam)
-    print('Total training duration: {:3.2f}h'.format((time.time()-start_train)/3600))

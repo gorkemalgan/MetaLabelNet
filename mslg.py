@@ -133,7 +133,10 @@ def mslg(alpha, beta, gamma, stage1, stage2, K):
                     onehot = torch.zeros(labels.size(0), NUM_CLASSES).scatter_(1, labels.view(-1, 1), K).cpu().numpy()
                     new_y[0, index, :] = onehot
             t_meta_loader_iter = iter(m_dataloader)
-        y_hat = new_y[0].copy()
+        if meta_epoch >= 0:
+            y_hat = new_y[meta_epoch].copy()
+        else:
+            y_hat = new_y[0].copy()
         meta_grads_yy_log = np.zeros((NUM_TRAINDATA,NUM_CLASSES))
 
         for batch_idx, (images, labels) in enumerate(t_dataloader):
@@ -451,7 +454,7 @@ if __name__ == "__main__":
     # create necessary folders
     create_folder('{}/dataset'.format(dataset))
     # global variables
-    train_dataset, meta_dataset, test_dataset, class_names = get_data(dataset,framework,noise_type,noise_ratio,args.seed,args.metadata_num)
+    train_dataset, meta_dataset, test_dataset, _, class_names = get_data(dataset,framework,noise_type,noise_ratio,args.seed,args.metadata_num)
     train_dataloader = torch.utils.data.DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=False, num_workers=num_workers)
     test_dataloader = torch.utils.data.DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=False)
     meta_dataloader = torch.utils.data.DataLoader(meta_dataset,batch_size=BATCH_SIZE,shuffle=False, drop_last=True)

@@ -32,6 +32,7 @@ clothing1Mbalanced/dataset/
 clothing1Mbalanced/logs/
 clothing1Mbalanced/logs_hp/
 clothing1Mbalanced/models/
+imagenet/
 
 *.bat
 *.sh

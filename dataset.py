@@ -717,15 +717,26 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
             verified_val_paths[img_path] = int(entry[1])
 
         data_dir_food101 = 'food101N/dataset/food-101/food-101/'
-        val_labels_tmp = []
+        food101_imgs, food101_labels = [], []
         with open(data_dir_food101+'meta/test.txt','r') as f:
             lines = f.read().splitlines()
         for l in lines[1:]:
             img_path = data_dir_food101+'images/'+l+'.jpg'
-            val_imgs.append(img_path)
-            val_labels_tmp.append(get_label(img_path))
+            food101_imgs.append(img_path)
+            food101_labels.append(get_label(img_path))
+        with open(data_dir_food101+'meta/train.txt','r') as f:
+            lines = f.read().splitlines()
+        for l in lines[1:]:
+            img_path = data_dir_food101+'images/'+l+'.jpg'
+            food101_imgs.append(img_path)
+            food101_labels.append(get_label(img_path))
         if not (num_validation is None):
-            _, val_imgs, _, val_labels_tmp = train_test_split(val_imgs, val_labels_tmp, test_size=num_validation, random_state=random_seed)
+            food101_imgs, val_imgs, food101_labels, val_labels_tmp = train_test_split(food101_imgs, food101_labels, test_size=num_validation, random_state=random_seed)
+        if num_unlabeled != 0:
+            unlabeled_labels = {}
+            food101_imgs, unlabeled_imgs, food101_labels, _ = train_test_split(food101_imgs, food101_labels, test_size=num_unlabeled, random_state=random_seed)
+            for key in unlabeled_imgs:
+                unlabeled_labels[key] = get_label(key)
 
         # take only verified samples for test set
         for key in img_paths:
@@ -872,10 +883,15 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
                 for img in imgs:
                     imagenet_imgs.append(os.path.join(imagenet_dir,class_name,img)) 
                     imagenet_labels.append(get_imagenetlabel(class_name))
-            _, imgnet_imgs, _, imgnet_labels = train_test_split(imagenet_imgs, imagenet_labels, test_size=num_validation-NUM_WV_VAL_DATA, random_state=random_seed)
-            for img_path,label in zip(imgnet_imgs,imgnet_labels):
-                val_imgs.append(img_path)
+            imagenet_imgs, val_imgs, imagenet_labels, val_labels_tmp = train_test_split(imagenet_imgs, imagenet_labels, test_size=num_validation-NUM_WV_VAL_DATA, random_state=random_seed)
+            for img_path,label in zip(val_imgs,val_labels_tmp):
                 val_labels[img_path]=label 
+        if num_unlabeled != 0:
+            unlabeled_labels = {}
+            imagenet_imgs, unlabeled_imgs, imagenet_labels, unlabeled_labels_tmp = train_test_split(imagenet_imgs, imagenet_labels, test_size=num_unlabeled, random_state=random_seed)
+            for img_path,label in zip(unlabeled_imgs,unlabeled_labels_tmp):
+                unlabeled_labels[img_path]=label 
+
 
         random.Random(random_seed).shuffle(train_imgs)
         random.Random(random_seed).shuffle(val_imgs)
