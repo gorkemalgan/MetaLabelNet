@@ -22,14 +22,14 @@ import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-PARAMS_META = {'cifar10'           :{'alpha':1, 'beta':1e-2, 'stage1':44,'stage2':120, 'num_metadata': 5000},
-               'clothing1M'        :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
-               'clothing1M50k'     :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
-               'clothing1Mbalanced':{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
-               'food101N'          :{'alpha':1, 'beta':1e-3, 'stage1':1, 'stage2':20 , 'num_metadata': 10000},
-               'WebVision'         :{'alpha':1, 'beta':1e-3, 'stage1':14,'stage2':40 , 'num_metadata': 20000}}
+PARAMS_META = {'cifar10'           :{'beta':1e-2, 'stage1':44,'stage2':120, 'num_metadata': 5000},
+               'clothing1M'        :{'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'clothing1M50k'     :{'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'clothing1Mbalanced':{'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
+               'food101N'          :{'beta':1e-3, 'stage1':6, 'stage2':20 , 'num_metadata': 10000},
+               'WebVision'         :{'beta':1e-3, 'stage1':14,'stage2':40 , 'num_metadata': 20000}}
 
-def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
+def meta_noisy_train(beta, stage1, stage2, magicparam):
     def warmup_training(model_s1_path):
         if not os.path.exists(model_s1_path):
             for epoch in range(stage1): 
@@ -110,7 +110,7 @@ def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
         grads = [grad for grad in grads if grad is not None]
         for grad in grads:
             grad.detach()
-        fast_weights = OrderedDict((name, param - alpha*grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
+        fast_weights = OrderedDict((name, param - grad) for ((name, param), grad) in zip(net.named_parameters(), grads))  
         fast_out = net.forward(images_meta,fast_weights)   
         return criterion_cce(fast_out, labels_meta)
 
@@ -240,19 +240,19 @@ def meta_noisy_train(alpha, beta, stage1, stage2, magicparam):
                     summary_writer.add_scalar('label_similarity_true', pred_similarity, epoch)
 
             if VERBOSE > 0:
-                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{}/{}/{}/{}, Time: {:3.1f}({:3.2f})'
+                template = 'Epoch {}, Accuracy(train,meta_train,topk,val,test): {:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}/{:3.1f}, Loss(train,val,test): {:4.3f}/{:4.3f}/{:4.3f}, Label similarity: {:6.3f}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(beta,s1,s2,mp,seed): {:5.4f}/{}/{}/{}/{}, Time: {:3.1f}({:3.2f})'
                 print(template.format(epoch + 1, 
                                     train_accuracy.percentage, train_accuracy_meta.percentage, topk_accuracy, val_accuracy, test_accuracy,
                                     train_loss.avg, val_loss, test_loss,  
-                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, stage1, stage2, magicparam,RANDOM_SEED,
+                                    label_similarity.percentage, NUM_METADATA, meta_true, NUM_UNLABELED, beta, stage1, stage2, magicparam,RANDOM_SEED,
                                     time.time()-start_epoch, (time.time()-start_epoch)/3600))
 
-        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(alpha,beta,s1,s2,mp,seed): {:3.2f}/{:5.4f}/{}/{}/{}/{}, Time: {:3.2f}h'.format(
-            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, alpha, beta, stage1, stage2, magicparam, RANDOM_SEED, (time.time()-TRAIN_START_TIME)/3600))
+        print('{}({}): Train acc: {:3.1f}, Topk acc: {:3.1f}-{:3.1f} Validation acc: {:3.1f}-{:3.1f}, Test acc: {:3.1f}-{:3.1f}, Best epoch: {}, Num-data(meta,meta-true,unlabeled): {}/{}/{}, Hyper-params(beta,s1,s2,mp,seed): {:5.4f}/{}/{}/{}/{}, Time: {:3.2f}h'.format(
+            NOISE_TYPE, NOISE_RATIO, train_accuracy.percentage, topk_accuracy, topk_acc_best, val_accuracy, val_acc_best, test_accuracy, test_acc_best, epoch_best, NUM_METADATA, meta_true, NUM_UNLABELED, beta, stage1, stage2, magicparam, RANDOM_SEED, (time.time()-TRAIN_START_TIME)/3600))
         if SAVE_LOGS == 1:
             summary_writer.close()
             # write log for hyperparameters
-            hp_writer.add_hparams({'alpha':alpha, 'beta': beta, 'stage1':stage1, 'stage2':stage2, 'magicp':magicparam, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED}, 
+            hp_writer.add_hparams({'beta': beta, 'stage1':stage1, 'stage2':stage2, 'magicp':magicparam, 'num_meta':NUM_METADATA, 'num_train': NUM_TRAINDATA, 'num_unlabeled': NUM_UNLABELED}, 
                                   {'val_accuracy': val_acc_best, 'test_accuracy': test_acc_best, 'topk_accuracy_best':topk_acc_best, 'epoch_best':epoch_best})
             hp_writer.close()
             torch.save(net.state_dict(), os.path.join(log_dir, 'saved_model.pt'))
@@ -448,8 +448,6 @@ if __name__ == "__main__":
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
     
-    parser.add_argument('-a', '--alpha', required=False, type=float,
-        help="Learning rate for meta iteration")
     parser.add_argument('-b', '--beta', required=False, type=float,
         help="Beta paramter")
     parser.add_argument('-s1', '--stage1', required=False, type=int,
@@ -466,7 +464,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     #set default variables if they are not given from the command line
-    if args.alpha == None: args.alpha = PARAMS_META[args.dataset]['alpha']
     if args.beta == None: args.beta = PARAMS_META[args.dataset]['beta']
     if args.stage1 == None: args.stage1 = PARAMS_META[args.dataset]['stage1']
     if args.stage2 == None: args.stage2 = PARAMS_META[args.dataset]['stage2']
@@ -529,14 +526,14 @@ if __name__ == "__main__":
     softmax = nn.Softmax(dim=1).to(DEVICE)
   
     if DATASET in DATASETS_SMALL:
-        print("Dataset: {}, Noise type: {}, Noise ratio: {}, Device: {}, Batch size: {}, #GPUS to run: {}, alpha:{}, beta:{}, stage1:{}, stage2:{}, mp:{}, Num-data(meta,unlabeled): {}/{}, Seed: {}".format(DATASET, NOISE_TYPE, NOISE_RATIO, DEVICE, BATCH_SIZE, ngpu, args.alpha, args.beta, args.stage1, args.stage2, args.magicparam, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED))
+        print("Dataset: {}, Noise type: {}, Noise ratio: {}, Device: {}, Batch size: {}, #GPUS to run: {}, beta:{}, stage1:{}, stage2:{}, mp:{}, Num-data(meta,unlabeled): {}/{}, Seed: {}".format(DATASET, NOISE_TYPE, NOISE_RATIO, DEVICE, BATCH_SIZE, ngpu, args.beta, args.stage1, args.stage2, args.magicparam, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED))
     else:
-        print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}, alpha:{}, beta:{}, stage1:{}, stage2:{}, mp:{}, Num-data(meta,unlabeled): {}/{}, Seed: {}".format(DATASET, MODEL_NAME, DEVICE, BATCH_SIZE, ngpu, args.alpha, args.beta, args.stage1, args.stage2, args.magicparam, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED))
+        print("Dataset: {}, Model: {}, Device: {}, Batch size: {}, #GPUS to run: {}, beta:{}, stage1:{}, stage2:{}, mp:{}, Num-data(meta,unlabeled): {}/{}, Seed: {}".format(DATASET, MODEL_NAME, DEVICE, BATCH_SIZE, ngpu, args.beta, args.stage1, args.stage2, args.magicparam, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED))
 
     # if logging
     if SAVE_LOGS == 1:
         base_folder = MODEL_NAME if DATASET in DATASETS_BIG else NOISE_TYPE + '/' + str(args.noise_ratio) + '/' + MODEL_NAME
-        log_folder = '{}_{}'.format(args.folder_log,current_time) if args.folder_log else 'a{}_b{}_s{}_m{}_u{}_sd{}_{}'.format(args.alpha, args.beta, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
+        log_folder = '{}_{}'.format(args.folder_log,current_time) if args.folder_log else 'b{}_s{}_m{}_u{}_sd{}_{}'.format(args.beta, args.stage1, NUM_METADATA, NUM_UNLABELED, RANDOM_SEED, current_time)
         log_base = '{}/logs/{}/'.format(DATASET, base_folder)
         log_dir = log_base + log_folder + '/'
         log_dir_hp = '{}/logs_hp/{}/'.format(DATASET, base_folder)
@@ -549,4 +546,4 @@ if __name__ == "__main__":
         hp_writer = SummaryWriter(log_dir_hp)
     
     TRAIN_START_TIME = time.time()
-    meta_noisy_train(args.alpha, args.beta, args.stage1, args.stage2, args.magicparam)
+    meta_noisy_train(args.beta, args.stage1, args.stage2, args.magicparam)
