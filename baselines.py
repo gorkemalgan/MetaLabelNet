@@ -874,6 +874,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', required=False, type=int, default=42,
         help="Random seed to be used in simulation")
 
+    parser.add_argument('--valdata_num', required=False, type=int, default=5000,
+        help="Number of samples to be used as meta-data")
     parser.add_argument('-u', '--unlabeleddata_num', required=False, type=int, default=0,
         help="Number of samples to be used as unlabeled-data")
 
@@ -921,7 +923,7 @@ if __name__ == "__main__":
     lr_scheduler = get_lr_scheduler(dataset)
     optimizer = optim.SGD(net.parameters(), lr=lr_scheduler(0), momentum=0.9, weight_decay=1e-4)
     summary_writer = SummaryWriter(log_dir)
-    train_dataloader, val_dataloader, test_dataloader, class_names = get_dataloader(dataset, BATCH_SIZE,framework,noise_type,noise_ratio,args.seed,num_workers,args.unlabeleddata_num)
+    train_dataloader, val_dataloader, test_dataloader, class_names = get_dataloader(dataset, BATCH_SIZE,framework,noise_type,noise_ratio,args.seed,num_workers,args.valdata_num,args.unlabeleddata_num)
     NUM_TRAINDATA = len(train_dataloader.dataset)
 
     main(args)

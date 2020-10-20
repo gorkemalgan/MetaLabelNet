@@ -823,14 +823,13 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
             train_imgs = train_imgs2
             train_labels = train_labels2
 
-            # divide unlabeled set
-            if num_unlabeled != 0:
-                unlabeled_imgs  = []
-                train_labels_tmp = []
-                unlabeled_labels = train_labels
-                for key in train_labels:
-                    train_labels_tmp.append(train_labels[key])
-                train_imgs, unlabeled_imgs, _, _ = train_test_split(train_imgs, train_labels_tmp, test_size=num_unlabeled, random_state=random_seed)
+        # divide unlabeled set
+        if num_unlabeled != 0:
+            train_labels_tmp = []
+            unlabeled_labels = train_labels
+            for key in train_imgs:
+                train_labels_tmp.append(train_labels[key])
+            train_imgs, unlabeled_imgs, _, _ = train_test_split(train_imgs, train_labels_tmp, test_size=num_unlabeled, random_state=random_seed)
             
         if num_validation != None:
             val_imgs_tmp = []
@@ -1044,9 +1043,9 @@ def get_data(dataset_name, framework=None, noise_type='feature-dependent', noise
         elif framework == 'pytorch':
             return get_bigdata_torch(dataset_name,random_seed,num_validation,num_unlabeled)
 
-def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2, num_unlabeled=0):
+def get_dataloader(dataset_name, batch_size, framework=None, noise_type='feature-dependent', noise_ratio=0, random_seed=42, num_workers=2, num_validation=None, num_unlabeled=0):
     framework = get_framework(framework)
-    train_dataset, val_dataset, test_dataset, _, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed,num_unlabeled=num_unlabeled)
+    train_dataset, val_dataset, test_dataset, _, class_names = get_data(dataset_name,framework,noise_type,noise_ratio,random_seed,num_validation,num_unlabeled)
     if framework == 'tensorflow':
         train_dataloader = train_dataset.batch(batch_size)
         test_dataloader = test_dataset.batch(batch_size)
