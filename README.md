@@ -1,5 +1,5 @@
 # Learning to Generate Soft-Labels from Noisy Labels
-Official code for paper [Learning to Generate Soft-Labels from Noisy Labels]().
+Official code for paper [MetaLabelNet: Learning to Generate Soft-Labels from Noisy-Labels]().
 
 ![](metalabelnet.png)
 *Illustration of the proposed MetaLabelNet algorithm*

@@ -872,7 +872,7 @@ def get_bigdata_lists(dataset_name,random_seed,num_validation,num_unlabeled):
         # add images from WebVision validation dataset to validation dataset
         NUM_WV_VAL_DATA = 1000
         test_imgs, val_imgs, _, _ = train_test_split(val_imgs, val_labels_tmp, test_size=NUM_WV_VAL_DATA, random_state=random_seed) 
-        # add images from Imagenet dataset to validation dataset
+        # ıf meta-data number exceeds threshold, add images from Imagenet dataset to validation dataset
         if num_validation > NUM_WV_VAL_DATA:
             imagenet_dir = data_dir + 'ImageNet/'
             imagenet_imgs, imagenet_labels = [], []

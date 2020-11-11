@@ -27,7 +27,7 @@ PARAMS_META = {'cifar10'           :{'beta':1e-2, 'stage1':44,'stage2':120, 'num
                'clothing1M50k'     :{'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
                'clothing1Mbalanced':{'beta':1e-3, 'stage1':1, 'stage2':10 , 'num_metadata': 5000},
                'food101N'          :{'beta':1e-3, 'stage1':6, 'stage2':20 , 'num_metadata': 10000},
-               'WebVision'         :{'beta':1e-3, 'stage1':14,'stage2':40 , 'num_metadata': 20000}}
+               'WebVision'         :{'beta':1e-3, 'stage1':14,'stage2':30 , 'num_metadata': 1000}}
 
 def meta_noisy_train(beta, stage1, stage2):
     def warmup_training(model_s1_path):
@@ -470,7 +470,7 @@ if __name__ == "__main__":
     # configuration variables
     FRAMEWORK = 'pytorch'
     DATASET = args.dataset
-    MODEL_NAME = 'MLNC'
+    MODEL_NAME = 'MetaLabelNet'
     NOISE_TYPE = args.noise_type
     NOISE_RATIO = args.noise_ratio/100
     BATCH_SIZE = args.batch_size if args.batch_size != None else PARAMS[DATASET]['batch_size']
